@@ -1,0 +1,597 @@
+# Inleiding
+
+Dit document geeft naar de eigenlijke steekproef tevens een beknopt inzicht in het tot stand komen van deze steekproef. We starten met een overzicht van het steekproefkader. Vervolgens clusteren we steekproefelementen in zoekzones. Tenslotte trekken we een getrapte steekproef: eerst een selectie van zoekzones en vervolgens een selectie van steekproefelementen binnen de geselecteerde zoekzones. Het laatste hoofdstuk van het document geeft een gedetailleerd overzicht van het volledige steekproefkader. Dit gedetailleerde overzicht laat toe om vlot de correcte vervanging te vinden voor steekproefelementen of zoekzones die wegvallen.
+
+We maken in dit document gebruik wan publiek beschikbare geografische informatie. We gebruiken data over wegen, spoorwegen en waterlopen van [OpenStreetMap](http://www.openstreetmap.org). Deze data is beschikaar onder een [Open Data Commons Open Database Licence (ODbL)](http://opendatacommons.org/licenses/odbl/). Als afbakening van administratieve grenzen gebruiken we het [voorlopig referentiebestand gemeentengrenzen, toestand 29/01/2016](https://download.agiv.be/Producten/Detail?id=1217). Deze kaartlagen worden door [AGIV](http://www.agiv.be) ter beschikking gesteld onder een Gratis Open Licentie.
+
+# Parameters
+
+```{r}
+d.max <- 1000
+```
+
+# Data
+
+## Steekproefkader Poelkikker
+
+```{r}
+sampleframe <- read_sf("../data/steekproefkader_poelkikker.gpkg", crs = 31370)
+
+sampleframe_watersurfaces <- read_sf("../data/steekproefkader_poelkikker.gpkg", "watervlakken") %>%
+  filter(polygon_id %in% sampleframe$polygon_id)
+```
+
+
+
+
+```{r}
+sampleframe_buffer <- st_buffer(sampleframe, dist = 2*d.max) %>%
+  select(polygon_id)
+
+sampleframe_envelop <- gEnvelope(as_Spatial(sampleframe_buffer)) %>%
+  st_as_sf(crs = 31370) %>%
+  mutate(envelop = TRUE)
+
+gebied.basis <- st_buffer(sampleframe, dist = d.max) %>%
+  mutate(soort = "Poelkikker") %>%
+  group_by(soort) %>%
+  summarise(aantal = sum(aantal)) %>%
+  ungroup()
+```
+
+
+
+# Automatische clustering
+
+## Eerste ruwe clustering
+
+### Buffer met afstand `r d.max` meter
+
+Trek rond elk steekproefelement een buffer met afstand `r d.max` meter\autorefp{fig:buffer}. Overlappende buffers voegen we samen.
+
+```{r buffer, fig.cap = sprintf("\\label{fig:buffer}Buffer van %im rond de elementen van het steekproefkader.", d.max)}
+gebied.basis %>%
+  st_transform(4326) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons() %>%
+  addMarkers(data = st_transform(sampleframe, crs =4326))
+```
+
+### Breng barrières in rekening
+
+```{r}
+barriere <- read_sf("../data/barriere_vl.gpkg", "barriere") %>%
+  st_join(sampleframe_envelop) %>%
+  filter(!is.na(envelop))
+
+```
+
+```{r}
+barriere %>%
+  st_drop_geometry() %>%
+  group_by(barriere) %>%
+  summarise(n_records = n()) %>%
+  ungroup() %>%
+  kable()
+
+```
+
+Zet de lijnvormige barrières om naar een (smal) vlak door er een buffer van 1m rond te trekken. In dit geval gebruiken we snelwegen, hoofdwegen, secundaire wegen, actieve spoorwegen, kanalen en rivieren uit OpenStreetMap en de gewestgrens van Vlaanderen van AGIV. We verwijderen vervolgens deze barrières van de buffer rond de steekproefelementen. Buffers die volledige door een barrière doorsneden worden zullen hierdoor gesplitst worden. Verwijder delen van de buffer die geen steekproefelementen meer bevatten (omdat ze aan de andere kant van de barrière liggen). Alle steekproefelementen die in eenzelfde polygoon vallen vormen samen een gebied. Merk op dat sommige buffers nog steeds een grote oppervlakte kunnen beslaan\autorefp{fig:buffer-splits}. Vooral in regio's met veel en goed gespreide steekproefelementen en weinig barrières.
+
+```{r splits_buffer}
+
+# barriere.buffer <- barriere[gIntersects(barriere, buffer), ] %>%
+#   gIntersection(buffer) %>%
+#   gBuffer()
+
+barriere_buffer <- barriere %>%
+  st_join(sampleframe_buffer) %>%
+  filter(!is.na(polygon_id)) %>%
+  mutate(type_barrieres = str_c(unique(barriere), collapse = ", ")) %>%
+  group_by(type_barrieres) %>%
+  summarise(n_records = n()) %>%
+  ungroup() %>%
+  st_buffer(dist = 1)
+
+# gebied <- gDifference(gebied.basis, barriere.buffer) %>%
+#   disaggregate()
+
+vlaanderen <- read_admin_areas(dsn = "flanders")
+
+gebied <- st_difference(gebied.basis, barriere_buffer) %>%
+  st_intersection(vlaanderen) %>%
+  st_cast("POLYGON") 
+
+# st_write(gebied, "../output/check.gpkg", "gebied", delete_layer = TRUE)
+# st_write(barriere, "../output/check.gpkg", "barriere", delete_layer = TRUE)
+
+
+gebied$gebied_id <- 1:nrow(gebied)
+
+relevant_gebied <- gebied %>%
+  st_join(sampleframe) %>%
+  filter(!is.na(polygon_id)) %>%
+  st_drop_geometry() %>%
+  distinct(gebied_id, polygon_id)
+  
+# 
+# gebied <- gebied[relevant.gebied, ]
+# 
+# gebied <- SpatialPolygonsDataFrame(
+#   gebied,
+#   data.frame(
+#     Gebied = seq_along(gebied)
+#   ),
+#   match.ID = FALSE
+# )
+
+gebied <- gebied %>%
+  filter(gebied_id %in% relevant_gebied$gebied_id) %>%
+  select(gebied_id)
+
+sampleframe <- sampleframe %>%
+  st_join(gebied)
+
+
+# kader$Gebied <- over(kader, gebied)$Gebied
+# 
+# todo <- is.na(kader$Gebied)
+
+# if (any(todo)) {
+#   dichtste <- gDistance(gebied, kader[todo, ], byid = TRUE) %>%
+#     apply(1, which.min)
+#   kader$Gebied[todo] <- gebied$Gebied[dichtste]
+# }
+
+
+# buffer.final <- gDifference(buffer, barriere.buffer) %>%
+#   disaggregate()
+# relevant.buffer <- gCovers(buffer.final, kader, byid = TRUE)
+# buffer.final <- buffer.final[colSums(relevant.buffer) > 0, ]
+
+
+sampleframe_buffer_aggregate <- sampleframe_buffer %>%
+  mutate(soort = "Poelkikker") %>%
+  group_by(soort) %>%
+  summarise(n = n()) %>%
+  ungroup() 
+
+
+buffer_final <- st_difference(sampleframe_buffer_aggregate, barriere_buffer) %>%
+  st_intersection(vlaanderen)  %>%
+  st_cast("POLYGON")
+
+buffer_final$buffer_id <- 1:nrow(buffer_final)
+
+relevant_buffer_final<- buffer_final %>%
+  st_join(sampleframe) %>%
+  filter(!is.na(polygon_id)) %>%
+  st_drop_geometry() %>%
+  distinct(buffer_id, polygon_id)
+  
+buffer_final <- buffer_final %>%
+  filter(buffer_id %in% relevant_buffer_final$buffer_id)
+
+rm(barriere, barriere_buffer, relevant_gebied, relevant_buffer_final, gebied.basis)
+gc()
+```
+
+```{r toon_splits_buffer, fig.cap = sprintf("\\label{fig:buffer-splits}Gesplitste buffers die steekproefelementen bevatten. Dit levert %i gebieden op.", length(gebied))}
+
+gebied %>%
+  st_transform(crs = 4326) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons(label = ~gebied_id) %>%
+  addPolygons(data = st_transform(buffer_final, 4326), color = "orange") %>%
+  addMarkers(data = st_transform(sampleframe, 4326))
+```
+
+
+## Clustering verfijnen
+
+### Gebieden opdelen in deelgebieden
+
+Voor elke gebied maken we een verfijnde clustering. Eerst splitsen we het gebied op in een aantal deelgebieden op basis van grenzen die duidelijk op het terrein waarneembaar zijn. In dit geval gebruiken we alle wegen, spoorwegen en waterwegen die beschikbaar zijn via OpenStreetMap. Dit houdt in dat we naast de grenzen in \autoref{eerste-ruwe-clustering} eveneens lokale wegen, paden, ongebruikte spoorwegen en kleine waterlopen gebruiken.
+
+Alle steekproefelementen die tot eenzelfde deelgebied behoren, houden we steeds samen in een zoekzone. In \autoref{fig:deelgebieden-gebied} geven we een histogram met het aantal steekproefelementen per deelgebied. Om aan te geven wat er concreet gebeurd tonen we een kaartje met de steekproefelementen en deelgebieden van het gebied met het grootste aantal steekproefelementen\autorefp{fig:grootste}.
+
+```{r}
+barriere.lokaal <- read_sf("../data/barriere_vl.gpkg", "barriere_lokaal") %>%
+  st_join(sampleframe_envelop) %>%
+  filter(!is.na(envelop)) %>%
+  st_join(sampleframe_buffer) %>%
+  filter(!is.na(polygon_id)) 
+
+barriere.lokaal_union <- st_union(barriere.lokaal)
+```
+
+
+
+```{r deelgebied}
+# deelgebied <- barriere.lokaal[gIntersects(barriere.lokaal, buffer.final), ] %>%
+#   gIntersection(buffer.final) %>%
+#   gBuffer() %>%
+#   gDifference(spgeom1 = buffer.final) %>%
+#   disaggregate()
+
+# relevant.deelgebied <- gIntersects(deelgebied, gebied, byid = TRUE) %>%
+#   colSums() %>%
+#   '>'(0)
+# deelgebied <- deelgebied[relevant.deelgebied, ]
+# deelgebied <- SpatialPolygonsDataFrame(
+#   deelgebied,
+#   data.frame(
+#     Deelgebied = seq_along(deelgebied)
+#   ),
+#   match.ID = FALSE
+# )
+
+barriere_lokaal_buffer <- barriere.lokaal %>%
+  st_join(buffer_final) %>%
+  filter(!is.na(soort))
+
+barriere_lokaal_buffer <- barriere_lokaal_buffer %>%
+  st_union() 
+
+barriere_lokaal_buffer <- barriere_lokaal_buffer %>%
+  st_buffer(dist = 1,  nQuadSegs = 2)
+
+deelgebied <- buffer_final %>%
+  st_difference(barriere_lokaal_buffer) %>%
+  st_cast("POLYGON") 
+
+deelgebied$deelgebied_id <- 1:nrow(deelgebied)
+
+relevant_deelgebied <- deelgebied %>%
+  st_join(gebied) %>%
+  filter(!is.na(gebied_id)) %>%
+  st_drop_geometry() %>%
+  distinct(deelgebied_id, gebied_id) 
+
+deelgebied <- deelgebied %>%
+  filter(deelgebied_id %in% relevant_deelgebied$deelgebied_id) %>%
+  select(deelgebied_id)
+
+sampleframe <- sampleframe %>%
+  st_join(deelgebied)
+
+# st_write(deelgebied, "../output/check.gpkg", "deelgebied", delete_layer = TRUE)
+# st_write(sampleframe, "../output/check.gpkg", "sampleframe")
+
+todo <- is.na(sampleframe$deelgebied_id)
+
+rm(barriere.lokaal, relevant_deelgebied)
+gc()
+```
+
+```{r deelgebieden_per_gebied, fig.cap = "\\label{fig:deelgebieden-gebied}Histogram van het aantal deelgebieden met minstens één steekproefelement per gebied.", fig.width = histogram.width}
+
+overview_sampleframe <- sampleframe %>%
+  st_drop_geometry() %>%
+  group_by(gebied_id) %>%
+  summarise(n_deelgebieden = n_distinct(deelgebied_id),
+            n_elementen = n()) %>%
+  ungroup()
+
+ overview_sampleframe %>%
+  ggplot(aes(x = n_deelgebieden)) + 
+  geom_histogram(binwidth = 1) +
+  scale_x_continuous("Aantal deelgebieden met steekproefelementen per gebied", breaks = 1:100, expand = c(0, 0)) +
+  ylab("Aantal gebieden")
+```
+
+```{r grootste_gebied}
+grootste_gebied_id <- overview_sampleframe %>%
+  top_n(1, n_elementen)
+
+grootste_gebied <- gebied %>%
+  filter(gebied_id == grootste_gebied_id$gebied_id)
+
+grootste_gebied_elementen <- sampleframe %>%
+  filter(gebied_id == grootste_gebied_id$gebied_id)
+
+grootste_gebied_deelgebieden <- deelgebied %>%
+  st_join(grootste_gebied) %>%
+  filter(!is.na(gebied_id))
+
+```
+
+```{r toon_grootste_gebied, fig.cap = "\\label{fig:grootste}Overzicht van de steekproefelementen van het gebied met het grootste aantal steekproefelementen. Steekproefelementen met hetzelfde cijfer behoren tot dezelfde deelgebied."}
+
+
+leaflet(st_transform(grootste_gebied, 4326)) %>%
+  addTiles() %>%
+  addPolygons(color = "yellow") %>%
+  addPolygons(data = st_transform(grootste_gebied_deelgebieden, 4326), color = "magenta") %>%
+  addMarkers(data = st_transform(grootste_gebied_elementen, 4326), label = ~str_c(gebied_id, ":", deelgebied_id))
+```
+
+Vervolgens gaan we na of we deelgebieden kunnen aggregeren tot grotere zoekzones. Hiervoor gebruiken we een zogenaamde agglomeratieve clustering. Als initiële clusters gebruiken we de steekproefelementen die in een zelfde deelgebied liggen. Vervolgens berekenen we de afstand in vogelvlucht tussen de clusters. Indien een cluster uit meerdere steekproefelement bestaat gebruiken we "complete linkage": de afstand tussen twee clusters is gelijk aan de afstand tussen de twee steekproefelementen die het verst uit elkaar liggen. We gaan op zoek naar de clusters die het dichtst bij elkaar gelegen zijn. Indien de afstand tussen die twee clusters kleiner is dan `r d.max`m, dan voegen we de clusters samen. We herberekenen de afstanden tussen de clusters en gaan opnieuw op zoek naar het clusterpaar met de kleinste afstand en voegen deze samen indien hun onderlinge afstand kleiner is dan `r d.max`m. We blijven dit herhalen tot de kleinste afstand tussen de clusterparen groter is dan `r d.max`m of tot er slechts één cluster overblijft.
+
+```{r verfijn_cluster}
+# old <- kader
+# kader <- old
+# dit.gebied <- sample(kader$Gebied, 1)
+groepeer <- function(x){
+    afstand <- x %>%
+      select(coords.x1, coords.x2) %>%
+      dist() %>%
+      as.matrix()
+    samen <- x %>%
+      nrow() %>%
+      seq_len() %>%
+      list() %>%
+      rep(2) %>%
+      expand.grid() %>%
+      filter(Var1 > Var2) %>%
+      mutate(
+        deelgebied1 = x$deelgebied_id[Var1],
+        deelgebied2 = x$deelgebied_id[Var2]
+      ) %>%
+      filter(deelgebied1 == deelgebied2) %>%
+      select(Var1, Var2) %>%
+      as.matrix()
+    afstand[samen] <- 0
+    x %>%
+      mutate(
+        zoekzone = afstand %>%
+          as.dist() %>%
+          hclust(method = "complete") %>%
+          cutree(h = d.max)
+    )
+}
+
+basis <- sampleframe %>%
+  mutate(coords.x1 = st_coordinates(sampleframe)[,1],
+         coords.x2 = st_coordinates(sampleframe)[,2]) %>%
+  st_drop_geometry() %>%
+  group_by(gebied_id)
+
+sampleframe_cluster <- basis %>%
+  filter(n_distinct(deelgebied_id) > 1) %>%
+  do(groepeer(.)) %>%
+  bind_rows(
+    basis %>%
+      filter(n_distinct(deelgebied_id) == 1) %>%
+      mutate(zoekzone = 1)
+  ) %>%
+  mutate(    
+    N = n()
+  ) %>%
+  ungroup() %>%
+  mutate(
+    zoekzone = interaction(gebied_id, zoekzone, drop = TRUE) %>%
+      as.integer() %>%
+      sprintf(fmt = "Z%04i")
+  ) %>%
+  as.data.frame()
+
+# 
+# coordinates(kader) <- ~coords.x1 + coords.x2
+# kader@proj4string <- CRS(doel.crs)
+# 
+# deelgebied$Zoekzone <- over(deelgebied, kader[, "Zoekzone"])$Zoekzone
+# zoekzone <- deelgebied[!is.na(deelgebied$Zoekzone), ]
+
+sampleframe_cluster_sf <- sampleframe_cluster %>%
+  st_as_sf(coords = c("coords.x1", "coords.x2"), crs = 31370) %>%
+  select(polygon_id, gebied_id, deelgebied_id, zoekzone)
+
+#st_write(sampleframe_cluster_sf, "../output/check.gpkg", "zoekzones", delete_layer = TRUE)
+
+zoekzones <- sampleframe_cluster %>%
+  distinct(deelgebied_id, zoekzone)
+
+deelgebied <- deelgebied %>% 
+  left_join(zoekzones, by = "deelgebied_id")
+
+zoekzone <- deelgebied %>%
+  filter(!is.na(zoekzone))
+
+st_write(zoekzone, "../output/check.gpkg", "zoekzones", delete_layer = TRUE)
+```
+
+Het resultaat van deze operatie zijn zoekzones van steekproefelementen waarbij alle steekproefelement binnen de zoekzone op hoogstens `r d.max`m van elkaar liggen. Het aantal zoekzones per gebied zal afhangen van de grootte van een gebied, de ruimtelijke configuratie van de steekproefelementen en de dichtheid van zichtbare grenzen\autorefp{fig:clusters-gebied}. Hierdoor is eveneens het aantal steekproefelementen per zoekzone variabel\autorefp{fig:element-cluster}. \autoref{fig:cluster-grootste} illustreert de zoekzones voor het gebied met het grootste aantal steekproefelementen. Aangezien we de clustering uitvoeren voor de afzonderlijke gebieden uit \autoref{fig:buffer-splits}, zullen er geen grote barrières binnen de zoekzones liggen. 
+
+Deze werkwijze leverde `r length(unique(kader$Zoekzone))` zoekzones over `r length(gebied)` gebieden.
+
+```{r clusters_per_gebied, fig.cap = "\\label{fig:clusters-gebied}Histogram van het aantal zoekzones per gebied.", fig.width = histogram.width}
+
+sampleframe_cluster %>%
+  distinct(gebied_id, zoekzone) %>%
+  count(gebied_id) %>%
+  ggplot(aes(x = n)) + 
+  geom_histogram(binwidth = 1) +
+  scale_x_continuous("Aantal zoekzones per gebied", breaks = 1:100, expand = c(0, 0)) +
+  ylab("Aantal gebieden")
+```
+
+```{r elementen_per_cluster, fig.cap = "\\label{fig:element-cluster}Histogram van het aantal steekproefelementen per zoekzone.", fig.width = histogram.width}
+sampleframe_cluster %>%
+  count(zoekzone) %>%
+  ggplot(aes(x = n)) + 
+  geom_histogram(binwidth = 1) +
+  scale_x_continuous(
+    "Aantal steekproefelementen per zoekzone", 
+    breaks = 1:100, 
+    expand = c(0, 0)
+  ) +
+  ylab("Aantal zoekzones")
+```
+
+```{r toon_cluster_grootste_gebied, fig.cap = "\\label{fig:cluster-grootste}Overzicht van de initiële zoekzones in het gebied met het grootste aantal steekproefelementen."}
+
+grootste_gebied_zoekzone <- zoekzone %>%
+  filter(deelgebied_id %in% grootste_gebied_deelgebieden$deelgebied_id)
+
+grootste_gebied_elementen <- sampleframe_cluster_sf %>%
+  filter(deelgebied_id %in% grootste_gebied_deelgebieden$deelgebied_id)
+
+leaflet(st_transform(grootste_gebied, 4326)) %>%
+  addTiles() %>%
+  addPolygons(label = ~as.character(gebied_id)) %>%
+  addPolygons(data = st_transform(grootste_gebied_zoekzone, 4326), color = "red") %>%
+  addMarkers(data = st_transform(grootste_gebied_elementen, 4326), label = ~zoekzone) 
+```
+
+
+### Zoekzones uitbreiden
+
+De zoekzones in \autoref{fig:cluster-grootste} omvatten enkel deelgebieden die momenteel steekproefelementen omvatten. Om te anticiperen op een mogelijk uitbreiding van het steekproefkader zullen deze initiële zoekzones uitbreiden. Het achterliggende idee is dat nieuwe steekproefelementen die binnen een bestaande zoekzone vallen automatisch aan deze zoekzone worden toegekend. Indien ze buiten een bestaande zoekzone vallen vormen nieuwe steekproefelementen de basis van een nieuwe zoekzone.
+
+Om de zoekzones uit te breiden bepalen we eerst de 'invloedssfeer' van de steekproefelementen in deze initiële zoekzone. De invloedssfeer van zoekzone A wordt bepaald op basis van twee criteria. 1) Elk punt binnen invloedssfeer A ligt op minder dan `r d.max`m van elk steekproefelement van zoekzone A ligt. 2) Elk punt binnen invloedssfeer A ligt dichter bij een steekproefelement van zoekzone A dan bij een steekproefelement van een andere zoekzone. Het eerste criterium zorgt er voor dat de invloedssfeer niet te groot wordt. Het tweede zorgt dat de invloedssferen van de verschillende zoekzones niet overlappen.
+
+Vervolgens kijken we voor elk deelgebied dat nog niet in een zoekzone zit in welke mate dat het overlapt met de invloedssferen. We kennen een deelgebied toe aan de zoekzone wiens invloedssfeer de grootste overlap heeft met het deelgebied. We doen deze toekenning enkel wanneer minstens de helft van het deelgebied door invloedssferen gedekt wordt. Het resultaat van dit algoritme illustreren we in \autoref{fig:cluster2-grootste}.
+
+```{r zoekzone_uitbreiden}
+kader <- as_Spatial(sampleframe_cluster_sf)
+
+kader$x_lambert <- coordinates(kader)[, 1]
+kader$y_lambert <- coordinates(kader)[, 2]
+
+uittebreiden <- lapply(
+  unique(kader$zoekzone),
+  function(deze.zone){
+    punten <- kader[kader$zoekzone == deze.zone, ]
+    huidig.max <- gDistance(punten, byid = TRUE) %>%
+      max()
+    if (huidig.max >= d.max) {
+      return(punten[NULL, ])
+    } else {
+      return(punten)
+    }
+  }
+) %>%
+  do.call(what = "rbind")
+
+zoekzone.buffer <- gBuffer(uittebreiden, byid = TRUE, width = d.max, quadsegs = 10)
+
+doorsnede <- lapply(
+  unique(zoekzone.buffer$zoekzone),
+  function(i){
+    x <- zoekzone.buffer[zoekzone.buffer$zoekzone == i, ]
+    x <- x@polygons %>% 
+      SpatialPolygons(proj4string = CRS(doel.crs))
+    while (!is.null(x) && length(x) > 1) {
+      x <- gIntersection(x[1], x[2]) %>%
+        rbind(x[-1:-2])
+    }
+    x@polygons[[1]]@ID <- i
+    return(x)
+  }
+) %>%
+  do.call(what = "rbind")
+
+tesselation <- coordinates(kader) %>%
+  as.data.frame() %>%
+  deldir(rw = as.vector(t(bbox(kader)))) %>%
+  tile.list() %>%
+  lapply(
+    function(x){
+      cbind(x$x, x$y) %>% 
+        Polygon() %>%
+        list() %>%
+        Polygons(
+          ID = x$ptNum
+        )
+    }
+  ) %>%
+  SpatialPolygons(proj4string = CRS(doel.crs)) %>%
+  SpatialPolygonsDataFrame(
+    kader@data %>% 
+      select(polygon_id, zoekzone) %>%
+      data.frame()
+  )
+tesselation <- tesselation[tesselation$zoekzone %in% uittebreiden$zoekzone, ]
+cluster <- seq_along(tesselation) %>%
+  lapply(
+    function(i){
+      x <- gIntersection(
+        tesselation[i, ],
+        doorsnede[tesselation$zoekzone[i]]
+      )
+      x@polygons[[1]]@ID <- as.character(i)
+      SpatialPolygonsDataFrame(
+        x, 
+        data.frame(
+          zoekzone = tesselation$zoekzone[i],
+          row.names = as.character(i),
+          stringsAsFactors = FALSE
+        )
+      )
+    }
+  ) %>%
+  do.call(what = rbind)
+
+cluster <- gUnionCascaded(cluster, id = cluster$zoekzone)
+
+deelgebied_spatial <- as_Spatial(deelgebied)
+
+dominant <- deelgebied_spatial[!deelgebied_spatial$zoekzone %in% unique(zoekzone$zoekzone), ] %>%
+  gIntersection(cluster, byid = TRUE) %>%
+  gArea(byid = TRUE) %>%
+  data.frame() %>%
+  select(Oppervlakte = 1) %>%
+  add_rownames() %>%
+  extract(
+    rowname, 
+    c("ID", "zoekzone"), 
+    "([[:digit:]]+) (Z[[:digit:]]+)"
+  ) %>%
+  group_by(ID) %>%
+  summarise(
+    zoekzone = zoekzone[which.max(Oppervlakte)],
+    overlap = sum(Oppervlakte)
+  )
+
+uitbreiding <- deelgebied_spatial[!deelgebied_spatial$zoekzone %in% unique(zoekzone$zoekzone), ] %>%
+  gArea(byid = TRUE) %>%
+  data.frame() %>%
+  select(Oppervlakte = 1) %>%
+  add_rownames("ID") %>%
+  inner_join(dominant, by = "ID") %>%
+  filter(overlap > 0.5 * Oppervlakte) %>%
+  select(ID, zoekzone)
+
+zoekzone.finaal <- deelgebied_spatial[uitbreiding$ID, ]
+zoekzone.finaal$zoekzone <- uitbreiding$zoekzone
+
+zoekzone.finaal <- st_as_sf(zoekzone.finaal, crs =31370) %>%
+  rename(geom = geometry)
+
+zoekzone_finaal <- bind_rows(zoekzone.finaal,
+                             zoekzone)
+
+st_write(zoekzone_finaal, "../output/check.gpkg", "zoekzone_finaal", delete_layer = TRUE)
+# rm(deelgebied)
+# gc()
+```
+
+```{r toon_cluster2_grootste_gebied, fig.cap = "\\label{fig:cluster2-grootste}Overzicht van de uitgebreide zoekzones in het gebied met het grootste aantal steekproefelementen."}
+
+# zoekzone.ll <- spTransform(zoekzone.finaal, CRS(latlong))
+# zz <- unique(zoekzone.ll$Zoekzone)
+
+grootste_gebied_zoekzone.finaal <- zoekzone_finaal %>%
+  st_join(grootste_gebied) %>%
+  filter(!is.na(gebied_id))
+
+kleur <- sample(
+  c("red", "yellow", "green", "magenta", "brown", "lime", "cyan", "black", "orange", "grey"), 
+  size = length(unique(grootste_gebied_zoekzone.finaal$zoekzone)), 
+  replace = TRUE
+)
+names(kleur) <- unique(grootste_gebied_zoekzone.finaal$zoekzone)
+
+grootste_gebied_zoekzone.finaal$kleur <- kleur[grootste_gebied_zoekzone.finaal$zoekzone]
+
+leaflet(st_transform(grootste_gebied, 4326)) %>%
+  addTiles() %>%
+  addPolygons() %>%
+  addPolygons(data = st_transform(grootste_gebied_zoekzone.finaal, 4326), color = ~kleur, label = ~zoekzone) %>%
+  addMarkers(data = st_transform(grootste_gebied_elementen, 4326))
+```
+
+\FloatBarrier
