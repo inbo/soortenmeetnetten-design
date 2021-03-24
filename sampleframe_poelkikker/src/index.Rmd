@@ -1,0 +1,47 @@
+---
+title: "Steekproefkader Poelkikker"
+author: "Toon Westra"
+site: bookdown::bookdown_site
+output:
+  bookdown::html_document2:
+    keep_md: TRUE
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(
+  cache = TRUE,
+  autodep = TRUE,
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+```{r settings, cache = FALSE}
+library(rgdal)
+library(rgeos)
+library(sf)
+library(tidyverse)
+library(readxl)
+library(kableExtra)
+library(INBOtheme)
+library(lubridate)
+library(leaflet)
+library(n2khab)
+library(units)
+library(leaflet.extras)
+library(crosstalk)
+library(DT)
+
+doel.crs <- "+init=epsg:31370"
+```
+
+
+
+
+

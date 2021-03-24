@@ -9,3 +9,4 @@ src/Shapefile
 src/_bookdown_files
 .qgz
 docs
+.html

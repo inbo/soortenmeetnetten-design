@@ -1,0 +1,490 @@
+
+# Data
+
+## Watervlakken
+
+We maken gebruik van de watervlakkenlaag versie 2020.
+
+```{r}
+watersurfaces <- read_watersurfaces()
+```
+
+
+
+```{r}
+sampleframe_2016_orig <- read_sf("../data/sampleframe/version2016/poelkikker steekproefkader.shp", crs = 31370) 
+
+sampleframe_2016 <- sampleframe_2016_orig %>%
+  st_join(select(watersurfaces, polygon_id)) %>%
+  mutate(element_id = 1:nrow(sampleframe_2016_orig),
+    within_watersurface = !is.na(polygon_id)) 
+           
+```
+
+## Waarnemingen.be data 2021
+
+### Dataverkenning
+
+```{r}
+distribution_data_2021_orig <- read_excel("../data/distributiondata/version2021/INBODATAVR-268_Hei_en_Poelkikker_wbe_VL_Dump20210201.xlsx")
+
+#unique(distribution_data_2021_orig$status)
+
+distribution_data_2021 <- distribution_data_2021_orig %>%
+  filter(naam_nl == "Poelkikker") %>%
+  select(id, naam_nl, datum, aantal, gedrag, methode, kleed, geslacht,  x, y, precisie, status, bijzonderheden) %>%
+  mutate(datum = as.Date(datum),
+         jaar = year(datum),
+         gedrag = str_to_lower(gedrag),
+         kleed = str_to_lower(kleed),
+         geslacht = str_to_lower(geslacht),
+         status_summary = ifelse(str_sub(status, 1, 11) == "Goedgekeurd", "goedgekeurd",
+                                 str_to_lower(status)))
+
+```
+
+Onderstaande tabel geeft een overzicht van de waarnemingen in de dataset.
+
+```{r}
+overview <- distribution_data_2021 %>%
+  group_by(gedrag, kleed, geslacht) %>%
+  summarise(aantal_totaal = sum(aantal),
+            n_records = n()) %>%
+  ungroup()
+
+overview %>%
+  kable() %>%
+  kable_styling() %>%
+  collapse_rows(c(1,2), target = 1)
+```
+
+Onderstaande figuur geeft de verdeling van het aantal waarnemingen over de jaren.
+
+```{r}
+distribution_data_2021 %>%
+  ggplot(aes(x = jaar)) +
+  geom_bar()
+  
+```
+
+
+
+```{r, cache = FALSE}
+provincies <- read_admin_areas(dsn = "provinces") %>%
+  select(provincie = name)
+
+populatie_wvl <- read_sf("../data/distributiondata/populaties_poelkikker_west_vlaanderen.shp", crs = 31370) %>%
+  select(area_name)
+
+namen_wvl <- str_c(populatie_wvl$area_name, collapse = ", ")
+
+```
+
+### Selectie waarnemingen
+
+We selecteren de waarnemingen:
+
++ vanaf 2000
++ met precisie kleiner dan 500 meter
++ die goedgekeurd zijn
+
+We selecteren geen waarnemingen:
+
++ in Oost-Vlaanderen
++ buiten de gekende populaties in West-Vlaanderen: `r namen_wvl`
+
+```{r}
+distribution_data_sf <- distribution_data_2021 %>%
+  st_as_sf(coords = c("x", "y"), crs = 31370) %>%
+  st_join(provincies) %>%
+  st_join(populatie_wvl) %>%
+  filter(provincie != "Oost-Vlaanderen") %>%
+  filter(!(provincie == "West-Vlaanderen" & is.na(area_name))) %>%
+  filter(status_summary == "goedgekeurd") %>%
+  filter(jaar >= 2000) %>%
+  filter(precisie < 500)
+
+distribution_data_all_sf <- distribution_data_2021 %>%
+  st_as_sf(coords = c("x", "y"), crs = 31370) %>%
+  mutate(label = str_c(id, status, aantal, datum, str_c(collapse = "; ")))
+```
+
+
+
+
+```{r, eval = FALSE}
+distribution_data_all_sf %>%
+  st_transform(crs = 4326) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons(data = st_transform(populatie_wvl, 4326)) %>%
+  addMarkers(popup = ~label) %>%
+  leaflet.extras:: addFullscreenControl()
+``` 
+
+
+# Automatische selectie watervlakken steekproefkader
+
+
+
+```{r}
+
+poelkikker_buffer <- distribution_data_sf %>%
+  select(id) %>%
+  st_buffer(dist = 1000) 
+
+watersurfaces_poelkikker_buffer <- watersurfaces %>%
+  st_join(poelkikker_buffer) %>%
+  filter(!is.na(id)) %>%
+  st_drop_geometry() %>%
+  distinct(polygon_id)
+
+watersurfaces_poelkikker_buffer_sf <- watersurfaces %>%
+  filter(polygon_id %in% watersurfaces_poelkikker_buffer$polygon_id)
+
+watersurfaces_buffer_25 <- watersurfaces_poelkikker_buffer_sf %>%
+  st_buffer(25) %>%
+  select(polygon_id)
+
+watersurfaces_buffer_100 <- watersurfaces_poelkikker_buffer_sf %>%
+  st_buffer(100) %>%
+  select(polygon_id)
+
+watersurfaces_buffer_1000 <- watersurfaces_poelkikker_buffer_sf %>%
+  st_buffer(1000) %>%
+  select(polygon_id)
+  
+watersurfaces_met_poelkikker <- watersurfaces_buffer_25 %>%
+  st_join(distribution_data_sf) %>%
+  st_drop_geometry() %>%
+  filter(!is.na(id)) %>%
+  group_by(polygon_id) %>%
+  summarise(n_wnm = sum(!is.na(id)),
+            aantal = sum(aantal),
+            voortplanting = any(kleed %in% c("larve", "ei", "juveniel")),
+            kleed = str_c(unique(kleed), collapse = ", "),
+            min_jaar = min(jaar, na.rm = TRUE),
+            max_jaar = max(jaar, na.rm = TRUE),
+            goedgekeurd = any(status_summary == "goedgekeurd")) %>%
+  ungroup()
+
+watersurfaces_met_poelkikker_sf <- watersurfaces %>%
+  inner_join(watersurfaces_met_poelkikker, by = "polygon_id")
+
+selectie_poelen_met_wnm <- watersurfaces_met_poelkikker_sf %>%
+  filter(n_wnm >= 2) %>%
+  filter(max_jaar >= 2000) %>%
+  mutate(buffersize = 25)
+  
+wnm_poelkikker_in_watersurface <- distribution_data_sf %>%
+  st_join(watersurfaces_buffer_25) %>%
+  filter(!is.na(polygon_id)) %>%
+  st_drop_geometry() %>%
+  group_by(id, datum, jaar, aantal, gedrag, kleed, precisie, bijzonderheden, status) %>%
+  summarise(polygon_ids = str_c(polygon_id, collapse = "; ")) %>%
+  ungroup()
+
+wnm_poelkikker_in_watersurface_selectie <- distribution_data_sf %>%
+  st_join(select(selectie_poelen_met_wnm, polygon_id)) %>%
+  filter(!is.na(polygon_id)) %>%
+  st_drop_geometry() %>%
+  group_by(id, datum, jaar, aantal, gedrag, kleed, precisie, bijzonderheden, status) %>%
+  summarise(polygon_ids = str_c(polygon_id, collapse = "; ")) %>%
+  ungroup()
+
+watersurfaces_met_poelkikker_buffer100 <- distribution_data_sf %>%
+  filter(! id %in% wnm_poelkikker_in_watersurface_selectie$id) %>%
+  group_by(id) %>%
+  mutate(distance = min(st_distance(geometry, selectie_poelen_met_wnm))) %>%
+  ungroup() %>%
+  st_join(watersurfaces_buffer_100) %>%
+  filter(!is.na(polygon_id)) %>%
+  filter(!polygon_id %in% selectie_poelen_met_wnm$polygon_id) %>%
+  st_drop_geometry() %>%
+  group_by(polygon_id) %>%
+  summarise(distance = min(distance), 
+            n_wnm = sum(!is.na(id)),
+            aantal = sum(aantal),
+            voortplanting = any(kleed %in% c("larve", "ei", "juveniel")),
+            kleed = str_c(unique(kleed), collapse = ", "),
+            min_jaar = min(jaar, na.rm = TRUE),
+            max_jaar = max(jaar, na.rm = TRUE),
+            goedgekeurd = any(status_summary == "goedgekeurd")) %>%
+  ungroup()
+
+watersurfaces_met_poelkikker_buffer100_sf <- watersurfaces %>%
+  inner_join(watersurfaces_met_poelkikker_buffer100, by = "polygon_id")
+
+selectie_poelen_met_wnm_buffer100 <- watersurfaces_met_poelkikker_buffer100_sf %>%
+  filter(max_jaar >= 2000) %>%
+  filter( n_wnm >= 2)  %>%
+  filter(drop_units(distance) >= 100) %>%
+  mutate(buffersize = 100)
+
+wnm_poelkikker_in_watersurface_buffer100 <- distribution_data_sf %>%
+  filter(!id %in% wnm_poelkikker_in_watersurface$id) %>%
+  st_join(watersurfaces_buffer_100) %>%
+  filter(!is.na(polygon_id)) %>%
+  st_drop_geometry() %>%
+  group_by(id, datum, jaar, aantal, gedrag, kleed, precisie, bijzonderheden, status) %>%
+  summarise(polygon_ids = str_c(polygon_id, collapse = "; ")) %>%
+  ungroup()
+
+wnm_poelkikker_in_watersurface_buffer100_selectie <- distribution_data_sf %>%
+  st_join(watersurfaces_buffer_100) %>%
+  filter(!is.na(polygon_id)) %>%
+  filter(polygon_id %in% selectie_poelen_met_wnm_buffer100$polygon_id) %>%
+  st_drop_geometry() %>%
+  group_by(id, datum, jaar, aantal, gedrag, kleed, precisie, bijzonderheden, status) %>%
+  summarise(polygon_ids = str_c(polygon_id, collapse = "; ")) %>%
+  ungroup()
+
+
+# wnm_poelkikker_in_watersurface_buffer100_selectie <- distribution_data_sf %>%
+#   st_join(select(selectie_poelen_met_wnm_buffer100, polygon_id)) %>%
+#   filter(!is.na(polygon_id)) %>%
+#   st_drop_geometry() %>%
+#   group_by(id, datum, jaar, aantal, gedrag, kleed, precisie, bijzonderheden, status) %>%
+#   summarise(polygon_ids = str_c(polygon_id, collapse = "; ")) %>%
+#   ungroup()
+
+wnm_poelkikker_in_watersurface_buffer1000 <- distribution_data_sf %>%
+  filter(!id %in% wnm_poelkikker_in_watersurface_selectie$id) %>%
+  filter(!id %in% wnm_poelkikker_in_watersurface_buffer100_selectie$id) %>%
+  group_by(id) %>%
+  mutate(distance = min(st_distance(geometry, selectie_poelen_met_wnm)),
+         distance_buffer100 = min(st_distance(geometry, selectie_poelen_met_wnm_buffer100))) %>%
+  ungroup() %>%
+  st_join(watersurfaces_buffer_1000) %>%
+  filter(!is.na(polygon_id)) %>%
+  st_drop_geometry() %>%
+  group_by(id, datum, jaar, aantal, gedrag, kleed, precisie, bijzonderheden, status, distance, distance_buffer100) %>%
+  summarise(polygon_ids = str_c(polygon_id, collapse = "; ")) %>%
+  ungroup()
+
+
+```
+
+```{r, eval = FALSE}
+distribution_data_sf %>%
+  st_transform(crs = 4326) %>%
+  mutate(new = jaar >= 2016,
+         label = str_c("id = ", id, ";aantal = ", aantal, "; kleed = ", kleed, "; geslacht = ", geslacht, "; jaar = ", jaar, "; precisie = ", precisie, "; status = ", status_summary)) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons(data = st_transform(watersurfaces_poelkikker_buffer_sf, crs = 4326)) %>%
+  addCircleMarkers(color = ~ifelse(new, "green", "blue"), label = ~label) %>%
+  addMarkers(data = st_transform(sampleframe_2016, crs = 4326)) %>%
+  leaflet.extras:: addFullscreenControl()
+
+```
+
+
+```{r}
+
+selectie_poelen_steekproefkader_centroid <- bind_rows(selectie_poelen_met_wnm,
+                                             selectie_poelen_met_wnm_buffer100) %>%
+  st_centroid()
+
+selectie_poelen_steekproefkader <- bind_rows(selectie_poelen_met_wnm,
+                                             selectie_poelen_met_wnm_buffer100)
+
+wnm_nakijken <- wnm_poelkikker_in_watersurface_buffer1000 %>%
+  filter(drop_units(distance) >= 1000) %>%
+  filter(drop_units(distance_buffer100) >= 1000) %>%
+  filter(jaar >= 2000)
+
+```
+
+We selecteren in de eerste plaatst de watervlakken die:
+
++ minstens twee goedgekeurde waarnemingen bevatten binnen een buffer van 25m rond het watervlak
+  + waarvan de meest recente waarneming van 2000 of recenter dateert
+
+Van de `r nrow(distribution_data_sf)` waarnemingen liggen er `r nrow(wnm_poelkikker_in_watersurface)` (`r round(nrow(wnm_poelkikker_in_watersurface)/nrow(distribution_data_sf)*100, 0)` %) binnen een buffer van 25m rond de watervlakkenlaag.
+
+Er voldoen `r nrow(selectie_poelen_met_wnm)` watervlakken aan bovenstaande voorwaarden.
+
+Daarnaast selecteren we nog watervlakken die
+
++ minder dan 2 waarnemingen bevatten binnen een buffer van 25m rond het watervlak maar wel minstens twee goedgekeurde waarnemingen binnen een buffer van 100 m
+  + waarvan de meest recente waarneming van 2000 of recenter dateert
++ de watervlakken liggen minsten op 100 m afstand van een van de reeds geselecteerde watervlakken
+
+Van de `r nrow(distribution_data_sf)` waarnemingen liggen er `r nrow(wnm_poelkikker_in_watersurface) + nrow(wnm_poelkikker_in_watersurface_buffer100)` (`r round((nrow(wnm_poelkikker_in_watersurface) + nrow(wnm_poelkikker_in_watersurface_buffer100))/nrow(distribution_data_sf)*100, 0)` %) binnen een buffer van 100 m rond de watervlakkenlaag.
+
+Op deze manier selecteren we bijkomend `r nrow(selectie_poelen_met_wnm_buffer100)` watervlakken.
+
+Ten slotte zijn er een aantal waarnemingen die:
+
++ binnen een buffer van 100m tot 1000m gelegen zijn rond de watervlakken
++ meer dan 1000m verwijderd zijn van een al geselecteerde watervlak
++ van 2015 of recenter dateren
+
+Dit zijn punten die manueel nagekeken moeten worden en potentieel nog kunnen opgenomen worden in het steekproefkader.
+
+# Manuele controle
+
+Op basis van een visuele controle en expertkennis over de verspreiding van de Poelkikker worden:
+
++ een aantal geselecteerde watervlakken geschrapt
++ een aantal niet geselecteerde watervlakken toegevoegd
++ een aantal watervlakken aangemaakt rond waarnemingen die niet in de buurt liggen van watervlakken uit de watervlakkenlaag
+
+```{r}
+controle <- read.csv2("../data/REVISIE Jeroen v4_TW.csv")
+
+watervlakken_schrappen <- controle %>%
+  filter(lot == "schrappen") %>%
+  select(polygon_id = watervlak, lot, reden)
+
+watervlakken_toevoegen <- controle %>%
+  filter(lot == "toevoegen") %>%
+  select(polygon_id = watervlak, reden) %>%
+  filter(!is.na(polygon_id)) %>%
+  filter(! polygon_id %in% selectie_poelen_steekproefkader$polygon_id)
+
+watervlakken_toevoegen_polygonen <- watersurfaces_poelkikker_buffer_sf %>%
+  inner_join(watervlakken_toevoegen, by = "polygon_id") %>%
+  select(polygon_id, hyla_code, area_name, reden)
+
+watervlakken_aanmaken_id <- controle %>%
+  filter(is.na(watervlak)) %>%
+  mutate(id = as.numeric(str_remove(reden, "bij waarneming ID "))) %>%
+  select(id, reden)
+  
+watervlakken_aanmaken_centroid <- distribution_data_sf %>%
+  inner_join(watervlakken_aanmaken_id, by = "id") %>%
+  mutate(polygon_id = str_c("wnm_id_", id)) %>%
+  select(polygon_id, reden)
+
+watervlakken_aanmaken_polygonen <- watervlakken_aanmaken_centroid %>%
+  st_buffer(dist = 5) 
+
+selectie_poelen_steekproefkader_controle <- selectie_poelen_steekproefkader %>%
+  select(polygon_id, hyla_code, area_name, n_wnm, buffersize, min_jaar, max_jaar) %>%
+  mutate(reden = "automatische selectie") %>%
+  filter(!polygon_id %in% watervlakken_schrappen$polygon_id) %>%
+  bind_rows(watervlakken_toevoegen_polygonen) %>%
+  bind_rows(watervlakken_aanmaken_polygonen) %>%
+  group_by(polygon_id, hyla_code, area_name, n_wnm, buffersize, min_jaar, max_jaar, reden) %>%
+  summarise(n_polygonen = n()) %>%
+  ungroup()
+
+check <- selectie_poelen_steekproefkader %>%
+  st_drop_geometry() %>%
+  group_by(polygon_id) %>%
+  mutate(n = n()) %>%
+  ungroup() %>%
+  filter(n > 1)
+
+selectie_poelen_steekproefkader_centroid <- st_centroid(selectie_poelen_steekproefkader_controle)
+```
+
+
+
+# Resultaat
+
+Onderstaande figuur toont:
+
++ de centroïden van de geselecteerde watervlakken (markers)
++ de geselecteerde watervlakken (groene polygonen) en andere watervlakken binnen een buffer van 250 m rond de waarnemingen
++ de individuele waarnemingen (cirkels)
+
+```{r}
+
+poelkikker_buffer250 <- distribution_data_sf %>%
+  select(id) %>%
+  st_buffer(dist = 250) 
+
+watersurfaces_poelkikker_buffer250 <- watersurfaces %>%
+  st_join(poelkikker_buffer250) %>%
+  filter(!is.na(id)) %>%
+  st_drop_geometry() %>%
+  distinct(polygon_id)
+
+watersurfaces_poelkikker_buffer250_sf <- watersurfaces %>%
+  inner_join(watersurfaces_poelkikker_buffer250, by = "polygon_id") %>%
+  mutate(color_show = ifelse(polygon_id %in% selectie_poelen_steekproefkader_centroid$polygon_id, "green", "red"))
+
+distribution_data_show_sf <- distribution_data_sf %>%
+  st_transform(crs = 4326) %>%
+  mutate(to_check = id %in% wnm_nakijken$id,
+         label = as.character(id))
+
+# distribution_data_sf %>%
+#   st_transform(crs = 4326) %>%
+#   mutate(to_check = id %in% wnm_nakijken$id,
+#          label = str_c("id = ", id, ";aantal = ", aantal, "; kleed = ", kleed, "; geslacht = ", geslacht, "; jaar = ", jaar, "; precisie = ", precisie, "; status = ", status_summary)) %>%
+#   leaflet() %>%
+#   addTiles() %>%
+#   addPolygons(data = st_transform(watersurfaces_poelkikker_buffer100_sf, crs = 4326), label = ~polygon_id, color = ~color_show) %>%
+#   addCircleMarkers(color = ~ifelse(to_check, "orange", "blue"), label = ~label) %>%
+#   addMarkers(data = st_transform(selectie_poelen_steekproefkader_centroid, crs = 4326, label = ~polygon_id)) %>%
+#   leaflet.extras:: addFullscreenControl()
+
+```
+
+
+```{r}
+
+selectie_poelen_steekproefkader_centroid_show <- selectie_poelen_steekproefkader_centroid %>%
+  st_transform(4326) %>%
+  mutate(methode = ifelse(reden == "automatische selectie", "automatisch", "manueel"))
+
+shared <- SharedData$new(selectie_poelen_steekproefkader_centroid_show)
+
+bscols(
+  filter_slider(id = "max_jaar",label =  "Maximum jaar wnm", sharedData = shared, column =  ~max_jaar, width = "100%"),
+  filter_slider(id = "n_wnm",label =  "Aantal wnm", sharedData = shared, column =  ~n_wnm, width = "100%")
+)
+
+bscols(
+  filter_checkbox("buffersize", "Buffergrootte voor selectie", shared, ~buffersize, inline = TRUE),
+  filter_checkbox("methode", "Methode", shared, ~methode, inline = TRUE)
+)
+
+  leaflet(shared) %>%
+  addTiles() %>%
+  addPolygons(data = st_transform(watersurfaces_poelkikker_buffer250_sf, crs = 4326), popup = ~polygon_id, color = ~color_show) %>%
+  addCircleMarkers(data = distribution_data_show_sf, color = ~ifelse(to_check, "orange", "blue"), popup = ~label) %>%
+  addMarkers(popup = ~polygon_id) %>%
+  addMeasure(primaryLengthUnit = "meters",
+    primaryAreaUnit = "sqmeters") %>%
+  leaflet.extras::addFullscreenControl()
+  
+  datatable(shared, 
+                    filter = "top",
+                    rownames = FALSE, 
+                    style="bootstrap",
+                    class="compact", 
+                    width="100%",
+                    options=list( dom = 'Bfrtip',
+                                 buttons = c('copy', 'csv'),
+                                 columnDefs = list(list(visible=FALSE, targets= c( 1, 2, 8, 9)))),
+                    extensions = 'Buttons',
+                    caption = str_c("Gemiddeld getelde aantallen per bezoek en per locatie")) 
+```
+
+
+# Output
+
+```{r, eval = TRUE}
+st_write(selectie_poelen_steekproefkader_centroid, "../output/steekproefkader_poelkikker.gpkg", "selectie_watervlakken_centroïde", delete_dsn = TRUE)
+st_write(distribution_data_sf, "../output/steekproefkader_poelkikker.gpkg", "data_waarnemingen", append = TRUE)
+st_write(wnm_nakijken, "../output/steekproefkader_poelkikker.gpkg", "data_waarnemingen_nakijken", append = TRUE)
+st_write(watersurfaces_poelkikker_buffer_sf, "../output/steekproefkader_poelkikker.gpkg", "watervlakken", append = TRUE)
+
+st_write(selectie_poelen_steekproefkader_centroid, "../output/selectie_watervlakken_centroïde.shp", delete_dsn = TRUE)
+distribution_data_sf$id <- as.character(distribution_data_sf$id)
+st_write(distribution_data_sf, "../output/data_waarnemingen.shp", delete_dsn = TRUE)
+st_write(wnm_nakijken, "../output/data_waarnemingen_nakijkenr.shp", delete_dsn = TRUE)
+st_write(watersurfaces_poelkikker_buffer_sf, "../output/watervlakken.shp",  delete_dsn = TRUE)
+```
+
+De geopackage steekproefader_poelkikker.gpkg bevat volgende lagen
+
++ selectie_watervlakken_centroïde: de centroïden van de geselecteerde watervlakken
++ data_waarnemingen: waarnemingen.be data met precisie < 500 en vanaf 2010
++ data_waarnemingen_nakijken: na te kijken waarnemingen.be data 
++ watervlakken: watervlakken met Poelkikker waarneming binnen een straal van 1000 m
