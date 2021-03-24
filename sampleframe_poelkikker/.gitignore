@@ -5,5 +5,7 @@
 data
 output
 css
-src/Shapefiles
+src/Shapefile
 src/_bookdown_files
+.qgz
+docs
