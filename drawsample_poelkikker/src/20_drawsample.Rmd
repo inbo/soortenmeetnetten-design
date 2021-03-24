@@ -11,32 +11,14 @@ grts_cell <- c(50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000, 250
 n_steekproef <- 60
 ```
 
-### Volgorde van zoekzones
-
-```{r centroides}
-# if (version_GEOS0() < "3.3.0") {
-#   zoekzone.shape <- gUnionCascaded(zoekzone.finaal, zoekzone.finaal$Zoekzone)
-# } else {
-#   zoekzone.shape <- gUnaryUnion(zoekzone.finaal, zoekzone.finaal$Zoekzone)
-# }
-# zoekzone.shape$Zoekzone <- over(zoekzone.shape, zoekzone.finaal)$Zoekzone
-# zoekzone.centroid <- gCentroid(zoekzone.shape, byid = TRUE)
-# zoekzone.centroid$Zoekzone <- zoekzone.shape$Zoekzone
-
-zoekzone_finaal_polygonen <- zoekzone_finaal %>%
-  group_by(zoekzone) %>%
-  summarise(n_deelgebieden = n()) %>%
-  ungroup()
-  
-zoekzone_finaal_polygonen <- zoekzone_finaal_polygonen %>%
-  st_buffer(dist = 5) %>%
-  st_buffer(dist = -5)
-
-zoekzone_finaal_centroid <- st_centroid(zoekzone_finaal_polygonen)
-
-# st_crs(zoekzone_finaal_centroid)
-
+```{r}
+zoekzone_polygonen <- read_sf("../output/zoekzone.gpkg", "polygonen")
+zoekzone_centroid <- read_sf("../output/zoekzone.gpkg", "centroiden")
+sampleframe <- read_sf("../output/zoekzone.gpkg", "elementen")
 ```
+
+
+### Volgorde van zoekzones
 
 ```{r GRTS_hoofd_laden, results='hide'}
 # utm.vlaanderen <- gewest %>%
@@ -50,7 +32,7 @@ zoekzone_finaal_centroid <- st_centroid(zoekzone_finaal_polygonen)
 # 
 # minafstand.hoofd <- min(afstand.hoofd)
 
-afstand_hoofd <- st_distance(zoekzone_finaal_centroid)
+afstand_hoofd <- st_distance(zoekzone_centroid)
 diag(afstand_hoofd) <- Inf
 minafstand_hoofd <- min(afstand_hoofd) %>%
   drop_units()
@@ -62,7 +44,7 @@ if (all(grts_cell > minafstand_hoofd / sqrt(2))) {
     max()
 }
 
-file.hoofd <- sprintf("../data/GRTS%07i.rds", afstand_hoofd)
+file.hoofd <- str_c("../data/GRTS_", afstand_hoofd, ".rds")
 
 if (!file.exists(file.hoofd)) {
   GridTopology(
@@ -84,12 +66,10 @@ if (!file.exists(file.hoofd)) {
     spTransform(CRS(doel.crs)) %>%
     saveRDS(file = file.hoofd)
 }
-hoofd_grts <- readRDS(file.hoofd) %>%
-  st_as_sf()
+
+hoofd_grts <- readRDS(file.hoofd) 
 # rm(gewest)
 
-st_crs(hoofd_grts) <- 31370
-#saveRDS(hoofd_grts, file = "../data/GRTS_250.rds")
 ```
 
 Om een steekproef van zoekzones te trekken zetten we de zoekzones eerst om naar een puntlocatie door de centroide te berekenen. Vervolgens zullen we nagaan in welke cel van het GRTS raster deze centroide valt. De kleinste afstand tussen twee centroides bedraagt `r sprintf("%.0fm", minafstand.hoofd)`. Daarom gebruiken we een GRTS raster met een rastergrootte van `r afstand.hoofd`m zodat een rastercel in principe slechts één centroide bevat. Aan de zoekzone kennen we het nummer toe van de GRTS rastercel die onder de centroide ligt. In \autoref{fig:centroide} zetten we op de plaats van elke centroide van de zoekzone de volgorde waarin de zoekzones geselecteerd worden volgens het GRTS algoritme.
@@ -106,14 +86,14 @@ Om een steekproef van zoekzones te trekken zetten we de zoekzones eerst om naar 
 # zoekzone.centroid$Ranking <- grts.hoofdselectie[relevant.hoofd, ]$Ranking
 # zoekzone.centroid$Volgorde <- rank(zoekzone.centroid$Ranking)
 
-zoekzone_finaal_centroid <- zoekzone_finaal_centroid %>%
+zoekzone_centroid <- zoekzone_centroid %>%
   st_join(hoofd_grts, join = st_nearest_feature) %>%
-  mutate (volgorde = rank(Ranking)) %>%
+  mutate(volgorde = rank(Ranking)) %>%
   rename(ranking = Ranking)
 
 ```
 
-```{r toon_cluster_centroide, fig.cap = sprintf("\\label{fig:centroide}Centroides van de zoekzones op de basis van een clusterafstand van %im. Het getal geeft de volgorde van bemonstering aan. Het aantal zoekzones bedraagt %i.", d.max, length(zoekzone.centroid))}
+```{r toon_cluster_centroide, fig.cap = sprintf("\\label{fig:centroide}Centroides van de zoekzones op de basis van een clusterafstand van %im. Het getal geeft de volgorde van bemonstering aan. Het aantal zoekzones bedraagt %i.", d.max, length(zoekzone_centroid))}
 
 # zoekzone.centroid.ll <- spTransform(zoekzone_finaal_centroid, 4326)
 
@@ -121,7 +101,7 @@ leaflet(st_transform(zoekzone, 4326)) %>%
   addTiles() %>%
   addPolygons(label = ~zoekzone) %>%
   addLabelOnlyMarkers(
-    data = st_transform(zoekzone_finaal_centroid, 4326), 
+    data = st_transform(zoekzone_centroid, 4326), 
     label = ~as.character(volgorde),
     labelOptions = labelOptions(noHide = TRUE)
   )
@@ -155,7 +135,7 @@ if (all(grts_cell > minafstand_detail / sqrt(2))) {
 
  file_detail <- sprintf("../data/GRTS%07i.rds", afstand_detail)
 
- if (!file.exists(file.detail)) {
+ if (!file.exists(file_detail)) {
   GridTopology(
     cellcentre.offset = utm.vlaanderen[, 1] %>%
       '/'(afstand.detail) %>%
@@ -212,26 +192,34 @@ In \autoref{fig:steekproef-element} geven we de bemonsteringsvolgorde van alle s
 # rm(gemeente.selectie)
 # gc()
 
-sampleframe <- sampleframe_cluster_sf %>%
+zoekzone_volgorde <- zoekzone_centroid %>%
+  st_drop_geometry() %>%
+  select(zoekzone, ranking_zoekzone = ranking, volgorde_zoekzone = volgorde)
+
+sampleframe <- sampleframe %>%
   st_join(grts.detailselectie, join = st_nearest_feature) %>%
-  select(zoekzone, ranking = Ranking) %>%
+  select(polygon_id, gebied_id, deelgebied_id, zoekzone, ranking_element = Ranking) %>%
   group_by(zoekzone) %>%
-  mutate (volgorde = rank(ranking)) %>%
-  ungroup()
+  mutate (volgorde_element = rank(ranking_element)) %>%
+  ungroup() %>%
+  left_join(zoekzone_volgorde, by = "zoekzone")
 
 ```
 
 ```{r toon_steekproef_grootste_gebied, fig.cap = "\\label{fig:steekproef-element}Steekproefvolgorde binnen elke zoekzone in het gebied met het grootste aantal steekproefelementen."}
-kader.ll <- spTransform(kader, CRS(latlong))
-leaflet(zoekzone.ll) %>%
+
+grootste_gebied_elementen <- sampleframe %>%
+  filter(gebied_id %in% grootste_gebied$gebied_id)
+
+leaflet(st_transform(grootste_gebied, 4326)) %>%
   addTiles() %>%
-  addPolygons(label = ~Zoekzone, color = ~Kleur) %>%
+  addPolygons() %>%
+  addPolygons(data = st_transform(grootste_gebied_zoekzone.finaal, 4326), color = ~kleur, label = ~zoekzone) %>%
   addLabelOnlyMarkers(
-    data = kader.ll, 
-    label = ~as.character(Volgorde),
+    data = st_transform(grootste_gebied_elementen, 4326), 
+    label = ~as.character(volgorde_element),
     labelOptions = labelOptions(noHide = TRUE)
-  ) %>%
-  fitBounds(grootste.box[1, 1], grootste.box[2, 1], grootste.box[1, 2], grootste.box[2, 2])
+  )
 ```
 
 ### Eigenlijke selectie van de steekproef
@@ -253,61 +241,60 @@ Op basis van beschikbare informatie kan het INBO beslissen om een element uit de
 # Overzicht van de steekproef
 
 ```{r volgorde_zoekzones, results='asis'}
-zoekzone.centroid@data %>%
-  select(Zoekzone, GRTS = Ranking) %>%  
-  inner_join(
-    kader@data,
-    by = "Zoekzone"
-  ) %>%
-  group_by(GRTS) %>%
-  summarise(
-    Gemeente = table(Gemeente) %>% 
-      sort() %>% 
-      tail(1) %>% 
-      names(),
-    Elementen = n()
-  ) %>%
+# zoekzone.centroid@data %>%
+#   select(Zoekzone, GRTS = Ranking) %>%  
+#   inner_join(
+#     kader@data,
+#     by = "Zoekzone"
+#   ) %>%
+#   group_by(GRTS) %>%
+#   summarise(
+#     Gemeente = table(Gemeente) %>% 
+#       sort() %>% 
+#       tail(1) %>% 
+#       names(),
+#     Elementen = n()
+#   ) %>%
+#   ungroup() %>%
+#   mutate(
+#     Steekproef = floor(sqrt(Elementen)),
+#     Cumulatief = cumsum(Steekproef)
+#   ) %>% 
+#   datatable(caption = "Overzicht van de zoekzones met hun GRTS nummer, het aantal steekproefelementen in de zoekzone, het aantal te bemonsteren elementen in de zoekzone en het cumulatief aantal te bemonsteren elementen.")
+
+sample_elementen <- sampleframe %>%
+  group_by(zoekzone) %>%
+  mutate(n_elementen = n()) %>%
   ungroup() %>%
-  mutate(
-    Steekproef = floor(sqrt(Elementen)),
-    Cumulatief = cumsum(Steekproef)
-  ) %>% 
-  datatable(caption = "Overzicht van de zoekzones met hun GRTS nummer, het aantal steekproefelementen in de zoekzone, het aantal te bemonsteren elementen in de zoekzone en het cumulatief aantal te bemonsteren elementen.")
+  mutate(zoekzone_samplesize = floor(sqrt(n_elementen)),
+         zoekzone_selectelement = volgorde_element <= zoekzone_samplesize) %>%
+  arrange(desc(zoekzone_selectelement), volgorde_zoekzone, volgorde_element) %>%
+  mutate(cum_samplesize = cumsum(zoekzone_selectelement),
+         selectelement = cum_samplesize <= n_steekproef)
+
+zoekzone_selectie <- sample_elementen %>%
+  st_drop_geometry() %>%
+  filter(selectelement) %>%
+  distinct(zoekzone)
+
+sample_zoekzone <- zoekzone_polygonen %>%
+  left_join(zoekzone_volgorde, by = "zoekzone") %>%
+  mutate(selectzoekzone = zoekzone %in% zoekzone_selectie$zoekzone)
+
 ```
 
+
+```{r}
+
+leaflet() %>%
+  addTiles() %>%
+  addPolygons(data = st_transform(sample_zoekzone, 4326), color = ~(ifelse(selectzoekzone, "yellow", "blue")), label = ~zoekzone) %>%
+  addCircleMarkers(data = st_transform(sample_elementen, 4326), color = ~(ifelse(selectelement, "green", "blue")), label = ~polygon_id)
+```
+
+
+
 ```{r shapefile_wegschrijven}
-writeOGR(
-  kader, 
-  dsn = ".", 
-  layer = sprintf(
-    "%s_punt_%05i",
-    gsub("\\.shp$", "", kader.shape),
-    d.max
-  ), 
-  driver = "ESRI Shapefile",
-  overwrite_layer = TRUE
-)
-zoekzone.shape$GRTS <- zoekzone.centroid@data$Ranking
-zoekzone.finaal$GRTS <- over(zoekzone.finaal, zoekzone.shape)[, "GRTS"]
-writeOGR(
-  zoekzone.finaal, 
-  dsn = ".", 
-  layer = sprintf(
-    "%s_polygoon_%05i",
-    gsub("\\.shp$", "", kader.shape),
-    d.max
-  ), 
-  driver = "ESRI Shapefile",
-  overwrite_layer = TRUE
-)
-save(
-  kader, 
-  zoekzone.shape, 
-  zoekzone.finaal, 
-  file = sprintf(
-    "%s_%05i.rda",
-    gsub("\\.shp$", "", kader.shape),
-    d.max
-  ))
+
 ```
 
