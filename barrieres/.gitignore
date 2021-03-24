@@ -1,0 +1,13 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+data
+output
+css
+src/Shapefile
+src/_bookdown_files
+*.qgz
+docs
+*.html
+*.md

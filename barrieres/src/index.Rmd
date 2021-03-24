@@ -1,0 +1,35 @@
+---
+title: "Aanmaak gis-laag met barrieres voor afbakening gebieden"
+author: "Toon Westra, Thierry Onkelinx"
+output: 
+  bookdown::html_document2
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(
+  cache = FALSE,
+  autodep = TRUE,
+  fig.height = 2.8,
+  fig.width = 5.9,
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+```{r settings, cache = FALSE}
+library(rgdal)
+library(rgeos)
+library(sf)
+library(tidyverse)
+
+doel.crs <- "+init=epsg:31370"
+```
+
+
+# Inleiding
+
+We maken in dit document gebruik wan publiek beschikbare geografische informatie. We gebruiken data over wegen, spoorwegen en waterlopen van [OpenStreetMap](http://www.openstreetmap.org). Deze data is beschikaar onder een [Open Data Commons Open Database Licence (ODbL)](http://opendatacommons.org/licenses/odbl/). Als afbakening van administratieve grenzen gebruiken we het [voorlopig referentiebestand gemeentengrenzen, toestand 29/01/2016](https://download.agiv.be/Producten/Detail?id=1217). Deze kaartlagen worden door [AGIV](http://www.agiv.be) ter beschikking gesteld onder een Gratis Open Licentie.
+
+

@@ -1,0 +1,100 @@
+
+# Data gewest inladen en omzetten naar lijnen
+
+```{r gemeente_laden, results='hide'}
+gewest <- read_sf("../data/Shapefile/Refgew.shp") %>%
+  st_transform(CRS(doel.crs)) %>%
+  select(naam = NAAM)
+
+box_gewest <- gEnvelope(as_Spatial(gewest)) %>%
+  st_as_sf() %>%
+  mutate(box = TRUE)
+```
+
+
+```{r gewest_naar_lijn}
+gewest.lijn <- gewest %>%
+  st_cast("MULTILINESTRING") %>%
+  st_cast("LINESTRING") %>%
+  mutate(barriere = "gewestgrens") %>%
+  select(barriere)
+
+```
+
+# Data osm
+
++ waterwegen
++ spoorwegen
++ wegen
+
+```{r barrieresvl, results='hide'}
+
+  railway <- read_sf("../data/osm/gis.osm_railways_free_1.shp") %>%
+    st_transform(CRS(doel.crs)) %>%
+    st_join(gewest) %>%
+    filter(!is.na(naam))
+  
+  spoorweg <- railway %>%
+    filter(fclass == "rail") %>%
+    mutate(barriere = "spoorweg") %>%
+    select(barriere)
+  
+  spoorweg.lokaal <- railway %>%
+    filter(fclass %in% c("rail", "abandoned", "disused")) %>%
+    mutate(barriere = "spoorweg") %>%
+    select(barriere)
+  
+  waterway <- read_sf("../data/osm/gis.osm_waterways_free_1.shp") %>%
+    st_transform(CRS(doel.crs)) %>%
+    st_join(gewest) %>%
+    filter(!is.na(naam))
+  
+  waterweg <- waterway %>%
+    filter(fclass  %in% c("river", "canal")) %>%
+    mutate(barriere = "waterweg") %>%
+    select(barriere)
+  
+  waterweg.lokaal <- waterway %>%
+    filter(fclass %in% c("river", "canal")) %>%
+    mutate(barriere = "waterweg") %>%
+    select(barriere)
+  
+  roads <- read_sf("../data/osm/gis.osm_roads_free_1.shp") %>%
+    st_transform(CRS(doel.crs)) %>%
+    st_join(box_gewest) %>%
+    filter(!is.na(box))
+  
+  weg <- roads %>%
+    filter(fclass  %in% c(
+      "motorway", "motorway_link", "trunk", "trunk_link", 
+      "primary", "primary_link", "secondary", "secondary_link"
+    )) %>%
+    mutate(fclass = str_remove(fclass, "_link"),
+      barriere = ifelse(fclass == "motorway", "snelweg",
+                        ifelse(fclass == "trunk", "expressweg",
+                               ifelse(fclass == "primary", "hoofdweg",
+                                      ifelse(fclass == "secondary", "secundaire weg", NA))))) %>%
+    select(barriere)
+        
+  
+  weg.lokaal <- roads %>%
+    mutate(barriere = ifelse(fclass %in% c("residential", "construction", "unclassified", "service", "tertiary", 
+    "tertiary_link", "road", "livingstreet", "raceway"), "lokale weg", 
+                        ifelse(fclass %in% c(
+                          "motorway", "motorway_link", "motorway_junction", "trunk", "trunk_link", 
+                          "primary", "primary_link", "secondary", "secondary_link"), "verbindingsweg", "pad"))) %>%
+    select(barriere)
+
+```
+
+# Barrieres samenvoegen en wegschreven naar geopackage
+
+```{r}
+
+  barriere_vl <- bind_rows(spoorweg, waterweg, weg)
+  barriere_lokaal_vl <- bind_rows(spoorweg.lokaal, waterweg.lokaal, weg.lokaal)
+  
+  st_write(barriere_vl, dsn = "../data/barriere_vl.gpkg", layer = "barriere", driver = "gpkg")
+  st_write(barriere_lokaal_vl, dsn = "../data/barriere_vl.gpkg", layer = "barriere_lokaal", driver = "gpkg")
+```
+
