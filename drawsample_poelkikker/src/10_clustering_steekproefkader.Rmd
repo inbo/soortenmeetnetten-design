@@ -67,7 +67,7 @@ barriere <- read_sf("../data/barriere_vl.gpkg", "barriere") %>%
 
 ```
 
-```{r}
+```{r, eval = FALSE}
 barriere %>%
   st_drop_geometry() %>%
   group_by(barriere) %>%
@@ -204,7 +204,7 @@ barriere.lokaal <- read_sf("../data/barriere_vl.gpkg", "barriere_lokaal") %>%
   st_join(sampleframe_buffer) %>%
   filter(!is.na(polygon_id)) 
 
-barriere.lokaal_union <- st_union(barriere.lokaal)
+#barriere.lokaal_union <- st_union(barriere.lokaal)
 ```
 
 
@@ -390,12 +390,12 @@ deelgebied <- deelgebied %>%
 zoekzone <- deelgebied %>%
   filter(!is.na(zoekzone))
 
-st_write(zoekzone, "../output/check.gpkg", "zoekzones", delete_layer = TRUE)
+#st_write(zoekzone, "../output/check.gpkg", "zoekzones", delete_layer = TRUE)
 ```
 
 Het resultaat van deze operatie zijn zoekzones van steekproefelementen waarbij alle steekproefelement binnen de zoekzone op hoogstens `r d.max`m van elkaar liggen. Het aantal zoekzones per gebied zal afhangen van de grootte van een gebied, de ruimtelijke configuratie van de steekproefelementen en de dichtheid van zichtbare grenzen\autorefp{fig:clusters-gebied}. Hierdoor is eveneens het aantal steekproefelementen per zoekzone variabel\autorefp{fig:element-cluster}. \autoref{fig:cluster-grootste} illustreert de zoekzones voor het gebied met het grootste aantal steekproefelementen. Aangezien we de clustering uitvoeren voor de afzonderlijke gebieden uit \autoref{fig:buffer-splits}, zullen er geen grote barrières binnen de zoekzones liggen. 
 
-Deze werkwijze leverde `r length(unique(kader$Zoekzone))` zoekzones over `r length(gebied)` gebieden.
+Deze werkwijze leverde `r length(unique(sampleframe_cluster$zoekzone))` zoekzones over `r length(gebied)` gebieden.
 
 ```{r clusters_per_gebied, fig.cap = "\\label{fig:clusters-gebied}Histogram van het aantal zoekzones per gebied.", fig.width = histogram.width}
 
@@ -595,3 +595,34 @@ leaflet(st_transform(grootste_gebied, 4326)) %>%
 ```
 
 \FloatBarrier
+
+```{r centroides}
+# if (version_GEOS0() < "3.3.0") {
+#   zoekzone.shape <- gUnionCascaded(zoekzone.finaal, zoekzone.finaal$Zoekzone)
+# } else {
+#   zoekzone.shape <- gUnaryUnion(zoekzone.finaal, zoekzone.finaal$Zoekzone)
+# }
+# zoekzone.shape$Zoekzone <- over(zoekzone.shape, zoekzone.finaal)$Zoekzone
+# zoekzone.centroid <- gCentroid(zoekzone.shape, byid = TRUE)
+# zoekzone.centroid$Zoekzone <- zoekzone.shape$Zoekzone
+
+zoekzone_finaal_polygonen <- zoekzone_finaal %>%
+  group_by(zoekzone) %>%
+  summarise(n_deelgebieden = n()) %>%
+  ungroup()
+  
+zoekzone_finaal_polygonen <- zoekzone_finaal_polygonen %>%
+  st_buffer(dist = 5) %>%
+  st_buffer(dist = -5) %>%
+  select(zoekzone)
+
+zoekzone_finaal_centroid <- st_centroid(zoekzone_finaal_polygonen)
+
+# st_crs(zoekzone_finaal_centroid)
+
+st_write(zoekzone_finaal_polygonen, "../output/zoekzone.gpkg", "polygonen")
+st_write(zoekzone_finaal_centroid, "../output/zoekzone.gpkg", "centroiden")
+st_write(sampleframe_cluster_sf, "../output/zoekzone.gpkg", "elementen")
+
+```
+
