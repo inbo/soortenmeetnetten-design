@@ -7,6 +7,7 @@ output
 css
 src/Shapefile
 src/_bookdown_files
-.qgz
+*.qgz
 docs
-.html
+*.html
+*.md
