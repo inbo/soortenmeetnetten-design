@@ -470,12 +470,12 @@ bscols(
 # Output
 
 ```{r, eval = TRUE}
-st_write(selectie_poelen_steekproefkader_centroid, "../output/steekproefkader_poelkikker.gpkg", "selectie_watervlakken_centroïde", delete_dsn = TRUE)
+st_write(selectie_poelen_steekproefkader_centroid, "../output/steekproefkader_poelkikker.gpkg", "selectie_watervlakken_centroid", delete_dsn = TRUE)
 st_write(distribution_data_sf, "../output/steekproefkader_poelkikker.gpkg", "data_waarnemingen", append = TRUE)
 st_write(wnm_nakijken, "../output/steekproefkader_poelkikker.gpkg", "data_waarnemingen_nakijken", append = TRUE)
 st_write(watersurfaces_poelkikker_buffer_sf, "../output/steekproefkader_poelkikker.gpkg", "watervlakken", append = TRUE)
 
-st_write(selectie_poelen_steekproefkader_centroid, "../output/selectie_watervlakken_centroïde.shp", delete_dsn = TRUE)
+st_write(selectie_poelen_steekproefkader_centroid, "../output/selectie_watervlakken_centroid.shp", delete_dsn = TRUE)
 distribution_data_sf$id <- as.character(distribution_data_sf$id)
 st_write(distribution_data_sf, "../output/data_waarnemingen.shp", delete_dsn = TRUE)
 st_write(wnm_nakijken, "../output/data_waarnemingen_nakijkenr.shp", delete_dsn = TRUE)

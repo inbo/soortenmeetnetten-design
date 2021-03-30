@@ -1,15 +1,15 @@
 
 ## Steekproeftrekking
 
-We gebruiken een getrapte steekproef. Eerst selecteren we een aantal zoekzones. Vervolgens selecteren we binnen elke geselecteerde zoekzone $\lfloor\sqrt(n_i) \rfloor$ steekproefelementen (de vierkantswortel naar beneden afgerond). Hierbij is $n_i$ het aantal steekproefelementen binnen zoekzone $i$.
-
-We gebruiken het GRTS algoritme aan alle rastercellen in Vlaanderen een aselect volgnummer toe te kennen. De kracht van het GRTS algoritme is dat de eerste $n$ rastercellen van deze lijst steeds een aselecte én ruimtelijk gebalanceerde steekproef vormen, ongeacht de grootte van $n$. Om een plejade aan GRTS rasters te gebruiken, zullen we de GRTS rasters zoveel mogelijk hergebruiken. We hangen ze op aan het UTM raster zodat een GRTS raster van 1000m samenvalt van het 1x1 km UTM raster. De rasterafmetingen die we in overweging nemen zijn `r sprintf("%im", grts.cell) %>% paste0(collapse = ", ")`.
-
 ```{r steekproef_parameters}
 set.seed(26012011)
 grts_cell <- c(50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000, 25000)
-n_steekproef <- 60
+n_steekproef <- 70
 ```
+
+We gebruiken een getrapte steekproef. Eerst selecteren we een aantal zoekzones. Vervolgens selecteren we binnen elke geselecteerde zoekzone $\lfloor\sqrt(n_i) \rfloor$ steekproefelementen (de vierkantswortel naar beneden afgerond). Hierbij is $n_i$ het aantal steekproefelementen binnen zoekzone $i$.
+
+We gebruiken het GRTS algoritme aan alle rastercellen in Vlaanderen een aselect volgnummer toe te kennen. De kracht van het GRTS algoritme is dat de eerste $n$ rastercellen van deze lijst steeds een aselecte én ruimtelijk gebalanceerde steekproef vormen, ongeacht de grootte van $n$. Om een plejade aan GRTS rasters te gebruiken, zullen we de GRTS rasters zoveel mogelijk hergebruiken. We hangen ze op aan het UTM raster zodat een GRTS raster van 1000m samenvalt van het 1x1 km UTM raster. De rasterafmetingen die we in overweging nemen zijn `r sprintf("%im", grts_cell) %>% paste0(collapse = ", ")`.
 
 ```{r}
 zoekzone_polygonen <- read_sf("../output/zoekzone.gpkg", "polygonen")
@@ -32,13 +32,18 @@ sampleframe <- read_sf("../output/zoekzone.gpkg", "elementen")
 # 
 # minafstand.hoofd <- min(afstand.hoofd)
 
+# zoekzone_centroid <- zoekzone_centroid %>%
+#   filter(zoekzone != "Z0013") %>%
+#   filter(zoekzone != "Z0012")  %>%
+#   filter(zoekzone != "Z0056")
+
 afstand_hoofd <- st_distance(zoekzone_centroid)
 diag(afstand_hoofd) <- Inf
 minafstand_hoofd <- min(afstand_hoofd) %>%
   drop_units()
 
 if (all(grts_cell > minafstand_hoofd / sqrt(2))) {
-  afstand_hoofd <- min(grts_cell)
+  afstand_hoofd <- 100
 } else {
   afstand_hoofd <- grts_cell[grts_cell < minafstand_hoofd / sqrt(2)] %>%
     max()
@@ -67,12 +72,18 @@ if (!file.exists(file.hoofd)) {
     saveRDS(file = file.hoofd)
 }
 
+# file.hoofd <- readRDS("../data/GRTS0000500.rds") %>%
+#   st_as_sf()
+# 
+# st_crs(file.hoofd) <- 31370
+# saveRDS(file.hoofd, "../data/GRTS_500.rds")
+
 hoofd_grts <- readRDS(file.hoofd) 
 # rm(gewest)
 
 ```
 
-Om een steekproef van zoekzones te trekken zetten we de zoekzones eerst om naar een puntlocatie door de centroide te berekenen. Vervolgens zullen we nagaan in welke cel van het GRTS raster deze centroide valt. De kleinste afstand tussen twee centroides bedraagt `r sprintf("%.0fm", minafstand.hoofd)`. Daarom gebruiken we een GRTS raster met een rastergrootte van `r afstand.hoofd`m zodat een rastercel in principe slechts één centroide bevat. Aan de zoekzone kennen we het nummer toe van de GRTS rastercel die onder de centroide ligt. In \autoref{fig:centroide} zetten we op de plaats van elke centroide van de zoekzone de volgorde waarin de zoekzones geselecteerd worden volgens het GRTS algoritme.
+Om een steekproef van zoekzones te trekken zetten we de zoekzones eerst om naar een puntlocatie door de centroide te berekenen. Vervolgens zullen we nagaan in welke cel van het GRTS raster deze centroide valt. De kleinste afstand tussen twee centroides bedraagt `r sprintf("%.0fm", minafstand_hoofd)`. Daarom gebruiken we een GRTS raster met een rastergrootte van `r afstand_hoofd`m zodat een rastercel in principe slechts één centroide bevat. Aan de zoekzone kennen we het nummer toe van de GRTS rastercel die onder de centroide ligt. In \autoref{fig:centroide} zetten we op de plaats van elke centroide van de zoekzone de volgorde waarin de zoekzones geselecteerd worden volgens het GRTS algoritme.
 
 ```{r steekproef_cluster}
 # relevant.hoofd <- gBuffer(zoekzone.centroid, width = afstand.hoofd / sqrt(2)) %>%
@@ -91,6 +102,7 @@ zoekzone_centroid <- zoekzone_centroid %>%
   mutate(volgorde = rank(Ranking)) %>%
   rename(ranking = Ranking)
 
+rm(hoofd_grts)
 ```
 
 ```{r toon_cluster_centroide, fig.cap = sprintf("\\label{fig:centroide}Centroides van de zoekzones op de basis van een clusterafstand van %im. Het getal geeft de volgorde van bemonstering aan. Het aantal zoekzones bedraagt %i.", d.max, length(zoekzone_centroid))}
@@ -172,7 +184,7 @@ gc()
 
 Aan elk steekproefelement kennen we eveneens een GRTS nummer toe op basis van het onderliggende GRTS raster. Ook hier kiezen we een geschikte rastergrootte op basis van de kleinste afstand tussen twee steekproefelementen. Dit raster zal meestal fijner zijn dan het GRTS raster voor de zoekzones tenzij in situaties waarbij elke zoekzone slechts één steekproefelement bevat.
 
-Bij dit steekproefkader bedraagt de kleinste afstand tussen twee steekproefelementen `r sprintf("%.0fm", minafstand.detail)` en kiezen we een GRTS raster van `r afstand.detail`m. Merk op dat het fijnst beschikbare raster `r min(grts.cell)`m bedraagt. Indien twee steekproefelementen dichter bij elkaar liggen, dan kunnen ze samen in dezelfde rastercel vallen. Dat wil zeggen dat in dat geval beide steekproefelementen samen geselecteerd zullen worden.
+Bij dit steekproefkader bedraagt de kleinste afstand tussen twee steekproefelementen `r sprintf("%.0fm", minafstand_detail)` en kiezen we een GRTS raster van `r afstand_detail`m. Merk op dat het fijnst beschikbare raster `r min(grts_cell)`m bedraagt. Indien twee steekproefelementen dichter bij elkaar liggen, dan kunnen ze samen in dezelfde rastercel vallen. Dat wil zeggen dat in dat geval beide steekproefelementen samen geselecteerd zullen worden.
 
 In \autoref{fig:steekproef-element} geven we de bemonsteringsvolgorde van alle steekproefelementen per zoekzone in het gebied met het grootste aantal steekproefelementen.
 
@@ -196,17 +208,21 @@ zoekzone_volgorde <- zoekzone_centroid %>%
   st_drop_geometry() %>%
   select(zoekzone, ranking_zoekzone = ranking, volgorde_zoekzone = volgorde)
 
+
+
 sampleframe <- sampleframe %>%
   st_join(grts.detailselectie, join = st_nearest_feature) %>%
   select(polygon_id, gebied_id, deelgebied_id, zoekzone, ranking_element = Ranking) %>%
   group_by(zoekzone) %>%
   mutate (volgorde_element = rank(ranking_element)) %>%
   ungroup() %>%
-  left_join(zoekzone_volgorde, by = "zoekzone")
+  left_join(zoekzone_volgorde, by = "zoekzone") %>%
+  st_join(populaties_west_vlaanderen) %>%
+  mutate(stratum = ifelse(is.na(naam), "Kempen", "West-Vlaanderen"))
 
 ```
 
-```{r toon_steekproef_grootste_gebied, fig.cap = "\\label{fig:steekproef-element}Steekproefvolgorde binnen elke zoekzone in het gebied met het grootste aantal steekproefelementen."}
+```{r toon_steekproef_grootste_gebied}
 
 grootste_gebied_elementen <- sampleframe %>%
   filter(gebied_id %in% grootste_gebied$gebied_id)
@@ -224,7 +240,13 @@ leaflet(st_transform(grootste_gebied, 4326)) %>%
 
 ### Eigenlijke selectie van de steekproef
 
-Uit dit steekproefkader wensen we `r n.steekproef` steekproefelementen te selecteren. Op dit ogenblik hebben alle zoekzones en alle steekproefelementen een GRTS nummer gekregen. Eerst sorteren we de zoekzones volgens hun GRTS nummer. In de zoekzone met het laagste GRTS nummer sorteren we steekproefelementen volgens hun GRTS nummer. We berekenen de vierkantswortel van het aantal steekproefelementen in deze zoekzone en ronden het af naar beneden. Dit is de steekproef binnen deze zoekzone. Zolang we op dit ogenblik minder dan `r n.steekproef` steekproefelementen geselecteerd hebben, herhalen we de procedure met de zoekzone met laagste GRTS nummer waar we nog geen steekproefelementen uit geselecteerd hebben. In \autoref{overzicht-van-de-steekproef} geven we de concrete uitwerken van dergelijk steekproef voor dit steekproefkader. \autoref{tab:Overzicht-zoekzone} geeft de gesorteerde lijst van zoekzones. 
+Uit dit steekproefkader wensen we `r n_steekproef` steekproefelementen te selecteren. Op dit ogenblik hebben alle zoekzones en alle steekproefelementen een GRTS nummer gekregen. Eerst sorteren we de zoekzones volgens hun GRTS nummer. 
+
+In de zoekzone met het laagste GRTS nummer sorteren we steekproefelementen volgens hun GRTS nummer. We berekenen de vierkantswortel van het aantal steekproefelementen in deze zoekzone en ronden het af naar beneden. Dit is de steekproef binnen deze zoekzone. Zolang we op dit ogenblik minder dan `r n_steekproef` steekproefelementen geselecteerd hebben, herhalen we de procedure met de zoekzone met laagste GRTS nummer waar we nog geen steekproefelementen uit geselecteerd hebben.
+
+De vijf populaties van Poelkikker in West-Vlaanderen beschouwen we als prioritair om op te volgen. Daarom zullen we al de zoekzones in West-Vlaanderen selecteren ongeacht het GRTS nummer van de zoekzone.
+
+In \autoref{overzicht-van-de-steekproef} geven we de concrete uitwerken van dergelijk steekproef voor dit steekproefkader.
 
 ### Procedure voor vervangen van steekproefelementen
 
@@ -262,13 +284,34 @@ Op basis van beschikbare informatie kan het INBO beslissen om een element uit de
 #   ) %>% 
 #   datatable(caption = "Overzicht van de zoekzones met hun GRTS nummer, het aantal steekproefelementen in de zoekzone, het aantal te bemonsteren elementen in de zoekzone en het cumulatief aantal te bemonsteren elementen.")
 
-sample_elementen <- sampleframe %>%
+
+
+set.seed(487363)
+check_unique_ranking <- sampleframe %>%
+  group_by(ranking_element) %>%
+  mutate(n = n(),
+         subrank = rank(ranking_element, ties.method = "random") - 1) %>%
+  ungroup() %>%
   group_by(zoekzone) %>%
-  mutate(n_elementen = n()) %>%
+  mutate(n_elementen = n(),
+         check = n_distinct(ranking_element) < n_elementen,
+         volgorde_element2 = rank(volgorde_element + n_elementen*subrank)) %>%
+  ungroup() %>%
+  filter(check) %>%
+  arrange(zoekzone, volgorde_element2)
+
+set.seed(487363)
+sample_elementen <- sampleframe %>%
+  group_by(ranking_element) %>%
+    mutate(subrank = rank(ranking_element, ties.method = "random") - 1) %>%
+  ungroup() %>%
+  group_by(zoekzone) %>%
+    mutate(n_elementen = n(),
+           volgorde_element = rank(volgorde_element + n_elementen*subrank)) %>%
   ungroup() %>%
   mutate(zoekzone_samplesize = floor(sqrt(n_elementen)),
          zoekzone_selectelement = volgorde_element <= zoekzone_samplesize) %>%
-  arrange(desc(zoekzone_selectelement), volgorde_zoekzone, volgorde_element) %>%
+  arrange(desc(zoekzone_selectelement), desc(stratum), volgorde_zoekzone, volgorde_element) %>%
   mutate(cum_samplesize = cumsum(zoekzone_selectelement),
          selectelement = cum_samplesize <= n_steekproef)
 
@@ -285,16 +328,73 @@ sample_zoekzone <- zoekzone_polygonen %>%
 
 
 ```{r}
+sample_elementen_show <- sample_elementen %>%
+  st_transform(4326) %>%
+  select(stratum, zoekzone, polygon_id, volgorde_zoekzone, volgorde_element, selectelement)
 
-leaflet() %>%
+sample_elementen_sd <- SharedData$new(sample_elementen_show)
+
+bscols(
+  filter_checkbox("selectelement", "Steekproef", sample_elementen_sd, ~selectelement, inline = TRUE)
+)
+
+leaflet(sample_elementen_sd) %>%
   addTiles() %>%
-  addPolygons(data = st_transform(sample_zoekzone, 4326), color = ~(ifelse(selectzoekzone, "yellow", "blue")), label = ~zoekzone) %>%
-  addCircleMarkers(data = st_transform(sample_elementen, 4326), color = ~(ifelse(selectelement, "green", "blue")), label = ~polygon_id)
-```
+  addPolygons(data = st_transform(sample_zoekzone, 4326), color = ~(ifelse(selectzoekzone, "yellow", "blue")), popup = ~zoekzone, group = "Zoekzones") %>%
+  addCircleMarkers(color = ~(ifelse(selectelement, "green", "blue")), popup = ~polygon_id, group = "Poelen") %>%
+  addLayersControl(overlayGroups = c("Zoekzones", "Poelen"),
+                   options = layersControlOptions(collapsed = FALSE)) %>%
+  addFullscreenControl()
 
+datatable(sample_elementen_sd, 
+                    filter = "top",
+                    rownames = FALSE, 
+                    style="bootstrap",
+                    class="compact", 
+                    width="100%",
+                    options=list( dom = 'Bfrtip',
+                                 buttons = c('copy', 'csv', 'excel'),
+                                 columnDefs = list(list(visible=FALSE, targets= c( 6)))),
+                    extensions = 'Buttons')
+```
+De geopackage **steekproefkader_poelkikker.gpkg** bevat twee layers:
+
+- meetpunten
+- gebieden
+
+De layer **steekproefkader_poelkikker_meetpunten** bevat volgende velden:
+
+- meetpunt_id: id van punt
+- naam: naam van meetpunt
+- grts_ranking_poel: grts-rangnummer van punt
+- gebied_code: code van gebied/cluster
+- watervlak_id: id van dichtstbij gelegen watervlak uit de watervlakkenlaag 1.1
+- grts_ranking_gebied: grts-rangnummer van gebied/cluster
+- volgorde_gebied: volgorde van de gebieden op basis van grts-rangnummer
+- steekproef_gebied: zit gebied in steekproef?
+- n_poelen_gebied: aantal punten in gebied/cluster
+- volgorde_poelen_ingebied: volgorde van de poelen binnen een gebied op basis van grts-rangnummer
+- steekproefgrootte_gebied: aantal te selecteren punten in gebied/cluster
+- steekproef_poel: zit punt in steekproef
 
 
 ```{r shapefile_wegschrijven}
+sample_elementen_output <- sample_elementen %>%
+  mutate(meetpunt_id = 1:nrow(sample_elementen),
+         naam = meetpunt_id) %>%
+  group_by(zoekzone) %>%
+    mutate(steekproef_gebied = any(selectelement),
+           steekproefgrootte_gebied = sum(selectelement)) %>%
+  ungroup() %>%
+  select(meetpunt_id, watervlak_id = polygon_id, naam, grts_ranking_poel = ranking_element, gebied_code = zoekzone, grts_ranking_gebied = ranking_zoekzone,
+         volgorde_gebied = volgorde_zoekzone, steekproef_gebied, n_poelen_gebied = n_elementen, volgorde_poelen_ingebied = volgorde_element, steekproefgrootte_gebied, steekproef_poel = selectelement)
+
+st_write(sample_elementen_output, "../output/steekproefkader_poelkikker.gpkg", "meetpunten", delete_layer = TRUE)
+
+sample_zoekzone <- sample_zoekzone %>%
+  select(gebied_code = zoekzone, steekproef_gebied = selectzoekzone)
+
+st_write(sample_zoekzone, "../output/steekproefkader_poelkikker.gpkg", "gebieden", delete_layer = TRUE)
 
 ```
 

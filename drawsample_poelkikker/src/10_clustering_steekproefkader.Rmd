@@ -4,21 +4,19 @@ Dit document geeft naar de eigenlijke steekproef tevens een beknopt inzicht in h
 
 We maken in dit document gebruik wan publiek beschikbare geografische informatie. We gebruiken data over wegen, spoorwegen en waterlopen van [OpenStreetMap](http://www.openstreetmap.org). Deze data is beschikaar onder een [Open Data Commons Open Database Licence (ODbL)](http://opendatacommons.org/licenses/odbl/). Als afbakening van administratieve grenzen gebruiken we het [voorlopig referentiebestand gemeentengrenzen, toestand 29/01/2016](https://download.agiv.be/Producten/Detail?id=1217). Deze kaartlagen worden door [AGIV](http://www.agiv.be) ter beschikking gesteld onder een Gratis Open Licentie.
 
-# Parameters
-
 ```{r}
 d.max <- 1000
 ```
 
-# Data
-
-## Steekproefkader Poelkikker
 
 ```{r}
-sampleframe <- read_sf("../data/steekproefkader_poelkikker.gpkg", crs = 31370)
+sampleframe <- read_sf("../data/steekproefkader_poelkikker.gpkg", "selectie_watervlakken_centroid", crs = 31370)
 
 sampleframe_watersurfaces <- read_sf("../data/steekproefkader_poelkikker.gpkg", "watervlakken") %>%
   filter(polygon_id %in% sampleframe$polygon_id)
+
+populaties_west_vlaanderen <- read_sf("../data/populaties_poelkikker_west_vlaanderen.shp", crs = 31370) %>%
+  select(naam = area_name)
 ```
 
 
@@ -35,7 +33,7 @@ sampleframe_envelop <- gEnvelope(as_Spatial(sampleframe_buffer)) %>%
 gebied.basis <- st_buffer(sampleframe, dist = d.max) %>%
   mutate(soort = "Poelkikker") %>%
   group_by(soort) %>%
-  summarise(aantal = sum(aantal)) %>%
+  summarise(n_wnm = sum(n_wnm)) %>%
   ungroup()
 ```
 
@@ -202,7 +200,14 @@ barriere.lokaal <- read_sf("../data/barriere_vl.gpkg", "barriere_lokaal") %>%
   st_join(sampleframe_envelop) %>%
   filter(!is.na(envelop)) %>%
   st_join(sampleframe_buffer) %>%
-  filter(!is.na(polygon_id)) 
+  filter(!is.na(polygon_id))
+
+# barriere.lokaal %>%
+#   st_drop_geometry() %>%
+#   group_by(barriere) %>%
+#   summarise(n = n()) %>%
+#   ungroup() %>%
+#   kable()
 
 #barriere.lokaal_union <- st_union(barriere.lokaal)
 ```
@@ -240,6 +245,7 @@ barriere_lokaal_buffer <- barriere_lokaal_buffer %>%
 
 deelgebied <- buffer_final %>%
   st_difference(barriere_lokaal_buffer) %>%
+  st_cast("MULTIPOLYGON") %>%
   st_cast("POLYGON") 
 
 deelgebied$deelgebied_id <- 1:nrow(deelgebied)
@@ -258,7 +264,10 @@ sampleframe <- sampleframe %>%
   st_join(deelgebied)
 
 # st_write(deelgebied, "../output/check.gpkg", "deelgebied", delete_layer = TRUE)
-# st_write(sampleframe, "../output/check.gpkg", "sampleframe")
+# st_write(gebied, "../output/check.gpkg", "gebied", delete_layer = TRUE)
+# st_write(sampleframe, "../output/check.gpkg", "sampleframe", delete_layer = TRUE)
+# # st_write(barriere_lokaal_buffer, "../output/check.gpkg", "barriere_lokaal_buffer")
+# st_write(buffer_final, "../output/check.gpkg", "buffer_final")
 
 todo <- is.na(sampleframe$deelgebied_id)
 
@@ -266,7 +275,7 @@ rm(barriere.lokaal, relevant_deelgebied)
 gc()
 ```
 
-```{r deelgebieden_per_gebied, fig.cap = "\\label{fig:deelgebieden-gebied}Histogram van het aantal deelgebieden met minstens één steekproefelement per gebied.", fig.width = histogram.width}
+```{r deelgebieden_per_gebied, fig.cap = "\\label{fig:deelgebieden-gebied}Histogram van het aantal deelgebieden met minstens één steekproefelement per gebied."}
 
 overview_sampleframe <- sampleframe %>%
   st_drop_geometry() %>%
@@ -397,7 +406,7 @@ Het resultaat van deze operatie zijn zoekzones van steekproefelementen waarbij a
 
 Deze werkwijze leverde `r length(unique(sampleframe_cluster$zoekzone))` zoekzones over `r length(gebied)` gebieden.
 
-```{r clusters_per_gebied, fig.cap = "\\label{fig:clusters-gebied}Histogram van het aantal zoekzones per gebied.", fig.width = histogram.width}
+```{r clusters_per_gebied, fig.cap = "\\label{fig:clusters-gebied}Histogram van het aantal zoekzones per gebied."}
 
 sampleframe_cluster %>%
   distinct(gebied_id, zoekzone) %>%
@@ -408,7 +417,7 @@ sampleframe_cluster %>%
   ylab("Aantal gebieden")
 ```
 
-```{r elementen_per_cluster, fig.cap = "\\label{fig:element-cluster}Histogram van het aantal steekproefelementen per zoekzone.", fig.width = histogram.width}
+```{r elementen_per_cluster, fig.cap = "\\label{fig:element-cluster}Histogram van het aantal steekproefelementen per zoekzone."}
 sampleframe_cluster %>%
   count(zoekzone) %>%
   ggplot(aes(x = n)) + 
@@ -620,9 +629,9 @@ zoekzone_finaal_centroid <- st_centroid(zoekzone_finaal_polygonen)
 
 # st_crs(zoekzone_finaal_centroid)
 
-st_write(zoekzone_finaal_polygonen, "../output/zoekzone.gpkg", "polygonen")
-st_write(zoekzone_finaal_centroid, "../output/zoekzone.gpkg", "centroiden")
-st_write(sampleframe_cluster_sf, "../output/zoekzone.gpkg", "elementen")
+st_write(zoekzone_finaal_polygonen, "../output/zoekzone.gpkg", "polygonen", delete_layer = TRUE)
+st_write(zoekzone_finaal_centroid, "../output/zoekzone.gpkg", "centroiden", delete_layer = TRUE)
+st_write(sampleframe_cluster_sf, "../output/zoekzone.gpkg", "elementen", delete_layer = TRUE)
 
 ```
 

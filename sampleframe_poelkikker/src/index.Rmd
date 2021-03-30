@@ -14,7 +14,7 @@ output:
 ```{r setup, include=FALSE}
 library(knitr)
 opts_chunk$set(
-  cache = TRUE,
+  cache = FALSE,
   autodep = TRUE,
   echo = FALSE,
   message = FALSE,

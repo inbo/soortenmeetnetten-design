@@ -1,6 +1,6 @@
 ---
 title: "Steekproeftrekking Poelkikker"
-author: "Toon Westra"
+author: "Toon Westra, Thierry Onkelinx, Jeroen Speybroeck"
 site: bookdown::bookdown_site
 output:
   bookdown::html_document2:
@@ -35,6 +35,9 @@ library(leaflet)
 library(n2khab)
 library(units)
 library(deldir)
+library(crosstalk)
+library(leaflet.extras)
+library(DT)
 
 doel.crs <- "+init=epsg:31370"
 ```

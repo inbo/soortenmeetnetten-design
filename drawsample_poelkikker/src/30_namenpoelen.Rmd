@@ -1,0 +1,94 @@
+
+# Namen van poelen
+
+```{r}
+sample_elementen <- read_sf("../output/steekproefkader_poelkikker.gpkg", "meetpunten")
+
+sample_gebieden <- read_sf("../output/steekproefkader_poelkikker.gpkg", "gebieden")
+```
+
+
+```{r}
+
+path_data <- "C://Users/toon_westra/Rprojecten/soortenmeetnetten-data/raw"
+
+locaties_kamsalamander <- read_sf("C://Users/toon_westra/Rprojecten/soortenmeetnetten-data/raw/meetnetten_locaties.gpkg", "locaties") %>%
+  filter(soortgroep == "amfibieën") %>%
+  filter(meetnet %in% c("Kamsalamander")) %>%
+  select(locatie_kamsalamander = locatie) %>%
+  st_transform(crs = 31370)
+
+locaties_boomkikker <- read_sf("C://Users/toon_westra/Rprojecten/soortenmeetnetten-data/raw/meetnetten_locaties.gpkg", "locaties") %>%
+  filter(soortgroep == "amfibieën") %>%
+  filter(meetnet %in% c("Boomkikker")) %>%
+  select(locatie_boomkikker = locatie) %>%
+  st_transform(crs = 31370)
+
+locaties_heikikker <- read_sf("../data/steekproefkader_heikikker_versie2021-01-20.gpkg", "steekproefkader_heikikker_meetpunten") %>%
+  select(locatie_heikikker = naam_toevoegen) %>%
+  filter(!is.na(locaties_heikikker))
+
+selectie_poelkikker <- sample_elementen %>%
+  select(polygon_id = watervlak_id, steekproef_poel) %>%
+  st_drop_geometry()
+
+waterbodies_meetnetten <- sampleframe_watersurfaces %>%
+  st_join(locaties_kamsalamander) %>%
+  st_join(locaties_boomkikker) %>%
+  st_join(locaties_heikikker) %>%
+  st_drop_geometry() %>%
+  inner_join(selectie_poelkikker, by = "polygon_id") %>%
+  mutate(naam = ifelse(!is.na(locatie_kamsalamander), locatie_kamsalamander,
+                       ifelse(!is.na(locatie_boomkikker), locatie_boomkikker, locatie_heikikker))) %>%
+  select(watervlak_id = polygon_id, area_name, naam_meetnetten = naam) %>%
+  filter(!is.na(naam_meetnetten)) %>%
+  mutate(naam_gebied = str_remove(naam_meetnetten, " - Poel"),
+         naam_gebied = str_remove(naam_gebied, "NR "),
+         naam_gebied = str_remove_all(naam_gebied, "[:digit:]"),
+         naam_gebied = ifelse(str_sub(naam_gebied, 1, 7) == "Merkske", "Merkske", naam_gebied),
+         naam_gebied = str_trim(naam_gebied)) %>%
+  group_by(watervlak_id, area_name, naam_gebied) %>%
+  summarise(naam_meetnetten = str_c(naam_meetnetten, collapse = ", ")) %>%
+  ungroup()
+
+```
+
+
+```{r}
+sample_elementen_naam <- sample_elementen %>%
+  left_join(waterbodies_meetnetten, by = c("watervlak_id"))
+
+gebiedsnamen <- sample_elementen_naam %>%
+  st_drop_geometry() %>%
+  distinct(gebied_code, naam_gebied) %>%
+  filter(!is.na(naam_gebied)) %>%
+  group_by(gebied_code) %>%
+  summarise(naam_gebied = str_c(naam_gebied, collapse =  ", ")) %>%
+  ungroup()
+
+sample_elementen_naamgebied <- sample_elementen_naam %>%
+  select(-naam_gebied) %>%
+  left_join(gebiedsnamen, by = "gebied_code")
+
+st_write(sample_elementen_naamgebied, "../output/sample_elementen_naamgebied.gpkg", "sample_elementen_naamgebied")
+``` 
+
+```{r}
+#naam manueel toeveogen
+
+sample_elementen <- read_sf("../output/sample_elementen_naamgebied.gpkg", "sample_elementen_naamgebied") %>%
+  mutate(naam = Naam_manueel) %>%
+  select(-naam_meetnetten, -Naam_manueel)
+
+```
+
+```{r}
+st_write(sample_elementen, "../output/steekproefkader_poelkikker_versie2021-03-29.gpkg", "meetpunten", delete_layer = TRUE)
+st_write(sample_gebieden, "../output/steekproefkader_poelkikker_versie2021-03-29.gpkg", "gebieden", delete_layer = TRUE)
+
+sample_elementen %>%
+  filter(steekproef_poel) %>%
+  select(naam) %>%
+  st_write("../output/steekproef_poelkikker_versie2021-03-29.shp")
+
+```
