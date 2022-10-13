@@ -1,0 +1,277 @@
+---
+title: "Update steekproefkader Kamsalamander"
+output: html_document
+date: '2022-10-12'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(n2khab)
+library(units)
+library(kableExtra)
+
+options(knitr.kable.NA = '')
+
+source(file.path(fileman_up("soortenmeetnetten-analysis"), "src/functions_smp.R"))
+```
+
+# Inleiding
+
+# Data
+
+Volgende bestanden bevatten de originele grts-ranking van de punten (poelen) en gebieden (clusters van poelen) waarop de steekproeftrekking gebaseerd is:
+
++ `Kamsalamander_steekproefkader_versie2018-01-05_AanvIL_polygoon_v5_00500`
++ `Kamsalamander_steekproefkader_versie2018-01-05_AanvIL_punten_v5_00500`
+
+```{r}
+steekproefkader_kamsalamander_gebieden_ranking <- st_read(file.path(fileman_up("soortenmeetnetten-data"), "gis/steekproefkader/kamsalamander"), "Kamsalamander_steekproefkader_versie2018-01-05_AanvIL_polygoon_v5_00500")
+
+steekproefkader_kamsalamander_gebieden_ranking <- steekproefkader_kamsalamander_gebieden_ranking %>%
+  select(gebied = Zoekzone, refpoint_x = x, refpoint_y = y, grts_ranking = Ranking)  %>%
+  st_transform(31370)
+
+steekproefkader_kamsalamander_punten_ranking <- st_read(file.path(fileman_up("soortenmeetnetten-data"), "gis/steekproefkader/kamsalamander"), "Kamsalamander_steekproefkader_versie2018-01-05_AanvIL_punten_v5_00500") %>%
+  st_transform(31370) %>%
+  select(locatie_origsk = Naam, grts_ranking = Ranking, wijziging = Wijziging, meetnetten = Meetnetten, Verwijder, BWmat_opm) 
+
+steekproefkader_kamsalamander_punten_ranking_buffer <- steekproefkader_kamsalamander_punten_ranking %>%
+  st_buffer(1)
+```
+
+Het volgende bestand geeft aan welke punten tot de steekproef behoren op basis van de grts-ranking en na manuele controle (een aantal poelen werden alsnog geschrapt uit het steekproefkader omdat de soort er niet meer voorkomt):
+
++ `Kamsalamander_steekproefkader_WGS84_versie2019-03-07`
+
+
+```{r}
+
+steekproefkader_kamsalamander <- st_read(file.path(fileman_up("soortenmeetnetten-data"), "gis/steekproefkader/kamsalamander"), "Kamsalamander_steekproefkader_WGS84_versie2019-03-07")
+
+steekproefkader_kamsalamander <- steekproefkader_kamsalamander %>%
+  select(locatie = Naam, gebied = GebiedCode, stratum = Stratum, steekproef = Steekproef, vlg_geb = Vlg_geb, vlg_punt = Vlg_punt, nStkpr_geb) %>%
+  group_by(gebied) %>%
+  mutate(gebied_in_steekproef = sum(steekproef) > 0) %>%
+  ungroup() %>%
+  mutate(locatie = ifelse(locatie == "De brand - Poel n31" & steekproef == 0, "De Brand - Poel n31bis", locatie),
+         locatie = ifelse(locatie == "Antitankgracht Haacht - Poel 16c" & steekproef == 0, "Antitankgracht Haacht - Poel 16cbis", locatie),
+         locatie_match = str_to_lower(str_remove(locatie, "- poel "))) %>%
+  st_transform(31370) %>%
+  st_join(steekproefkader_kamsalamander_punten_ranking_buffer)
+
+steekproefkader_kamsalamander_buffer <- steekproefkader_kamsalamander %>%
+  st_transform(crs = 31370) %>%
+  st_buffer(1)
+  
+
+```
+
+Meetnetten.be bevat de poelen die in de steekproef zitten, maar ook bijkomende poelen uit het steekproefkader. Niet alle poelen uit het steekproefkader zitten in meetnetten.be.
+
+
+```{r}
+meetnetten_kamsalamander <- get_locations_smp() %>%
+  filter(meetnet == "Kamsalamander") %>%
+  st_transform(31370)
+
+visits_kamsalamnder <- get_visits_smp() %>%
+  filter(meetnet == "Kamsalamander") %>%
+  group_by(locatie) %>%
+  summarise(n_visits = n_distinct(visit_id)) %>%
+  ungroup()
+
+aantal_kamsalamnder <- get_counts_smp() %>%
+  filter(meetnet == "Kamsalamander") %>%
+  filter(primaire_soort) %>%
+  group_by(locatie) %>%
+  summarise(aantal_tot = sum(aantal)) %>%
+  ungroup()
+
+
+```
+
+
+# Match meetnetten.be en steekproefkader
+
+Door verschillende aanpassingen aan locaties, zowel in meetnetten.be als in het bestand met het steekproefkader, sporen beiden niet meer volledig samen.
+
+```{r}
+meetnetten_kamsalamander_match <- meetnetten_kamsalamander %>%
+  st_join(select(steekproefkader_kamsalamander_buffer, locatie_orig = locatie)) %>%
+  st_join(select(steekproefkader_kamsalamander_gebieden_ranking, gebied)) %>%
+  left_join(visits_kamsalamnder, by ="locatie") %>%
+  left_join(aantal_kamsalamnder, by ="locatie")
+
+```
+
+
+```{r}
+check_poel1 <- meetnetten_kamsalamander_match %>%
+  filter(!is.na(gebied),
+         is.na(locatie_orig)) %>%
+  group_by(id) %>%
+  mutate(dist_sk = drop_units(min(st_distance(geom, steekproefkader_kamsalamander))),
+         dist_sk_orig = drop_units(min(st_distance(geom, steekproefkader_kamsalamander_punten_ranking)))) %>%
+  ungroup() %>%
+  st_join(steekproefkader_kamsalamander_punten_ranking_buffer, join = st_nearest_feature)  %>%
+  mutate(locatie_match = str_to_lower(locatie),
+         locatie_match = str_remove(locatie_match, " - poel"),
+         locatie_match_origsk = str_to_lower(locatie_origsk),
+         locatie_match_origsk = str_remove(locatie_match_origsk, " - poel"))
+  
+```
+
+Voor volgende locaties werd aangegeven ze mogen verwijderd worden uit het steekproefkader, maar de locaties zitten wel nog in meetnetten.be. Voor een aantal locaties werden al bezoeken ingevoerd, maar Kamsalamander werd niet waargenomen. Deze poelen kunnen op incatief gezet worden.
+
+```{r}
+
+poel_inactief <- check_poel1 %>%
+  st_drop_geometry() %>%
+  filter(dist_sk_orig < 1,
+         dist_sk > 1) %>%
+  select(locatie, n_visits, aantal_tot) %>%
+  mutate(n_visits = ifelse(is.na(n_visits), 0, n_visits))
+
+poel_inactief %>%
+  kable() %>%
+  kable_styling()
+  
+```
+Volgende punten werden in het steekproefkader manueel verplaatst op basis van de watervlakkenlaag. Meetnetten.be bevat de originele locaties en de coördinaten zouden dus aangepast moeten worden in meetnetten.be.
+
+```{r}
+poel_verplaatst <- check_poel1 %>%
+  anti_join(poel_inactief, by = "locatie") %>%
+  filter(locatie_match == locatie_match_origsk)
+
+poel_verplaatst %>%
+  st_drop_geometry() %>%
+  select(locatie, is_sample, afstand_verplaatst = dist_sk, BWmat_opm) %>%
+  mutate(afstand_verplaatst = round(afstand_verplaatst)) %>%
+  kable() %>%
+  kable_styling()
+```
+
+Onderstaande kaart geeft de locatie volgens meetnetten.be (blauw) en volgens het steekproefkader (geel) voor de verplaatste locaties.
+
+```{r}
+
+poelen_verplaatstnaar <- steekproefkader_kamsalamander %>%
+  filter(locatie_match %in% poel_verplaatst$locatie_match) %>%
+  st_transform(4326)
+
+poel_verplaatst %>%
+  st_transform(4326) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(label = ~locatie) %>%
+  addCircleMarkers(data = poelen_verplaatstnaar, color = "yellow")
+```
+
+```{r}
+poel_onduidelijk <- check_poel1 %>%
+  st_drop_geometry() %>%
+  anti_join(poel_inactief, by = "locatie") %>%
+  anti_join(poel_verplaatst, by = "locatie")
+
+```
+
+
+Voor gebied Z0207 moeten de namen aangepast worden in het steekproefkader zodat ze overeenkomen met die in meetnetten.be.
+
+
+```{r}
+
+poelen_sk <- steekproefkader_kamsalamander %>%
+  filter(gebied == "Z0207") %>%
+  st_transform(4326)
+  
+check_poel1 %>%
+  filter(gebied == "Z0207") %>%
+  st_transform(4326) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(label = ~locatie) %>%
+  addCircleMarkers(data = poelen_sk, color = "yellow", label = ~locatie)
+```
+
+```{r}
+check_poel1 %>%
+  filter(gebied == "Z0207") %>%
+  st_drop_geometry() %>%
+  select(locatie_meetnetten = locatie, locatie_steekproefkader = locatie_origsk) %>%
+  kable() %>%
+  kable_styling()
+```
+
+
+```{r}
+steekproefkader_kamsalamander <- steekproefkader_kamsalamander %>%
+  mutate(locatie = ifelse(locatie == "Heilig - Geestgoed - Poel 3", "Heilig-Geestgoed - Poel 6", 
+                          ifelse(locatie == "Heilig - Geestgoed - Poel 2", "Heilig-Geestgoed - Poel 3", 
+                                 ifelse(locatie == "ClusterZ0242 - Poel 1", "Heilig-Geestgoed - Poel 2", locatie))))
+```
+
+
+
+In gebied Dheide werd Poel 3 vervangen door Poel 4 in de steekproef. Dit is nog niet aangepast in het steekproefkader. Ook de naam moet aangepast worden in het steekproefkader.
+
+
+```{r}
+
+poelen_sk <- steekproefkader_kamsalamander %>%
+  filter(gebied == "Z0005") %>%
+  st_transform(4326)
+  
+check_poel1 %>%
+  filter(gebied == "Z0005") %>%
+  st_transform(4326) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(label = ~locatie) %>%
+  addCircleMarkers(data = poelen_sk, color = "yellow", popup = ~locatie)
+```
+
+```{r}
+steekproefkader_kamsalamander <- steekproefkader_kamsalamander %>%
+  mutate(locatie = ifelse(locatie == "ClusterZ0008 - Poel 9", "Dheide - Poel 4", locatie),
+         steekproef = ifelse(locatie == "Dheide - Poel 4", 1,
+                             ifelse(locatie == "Dheide - Poel 3", 0, steekproef)))
+```
+
+
+
+Wijgmaalbroek - Poel 4 zit niet meer in de laatste versie van het steekproefkader. Na controle blijkt deze in de versie `Kamsalamander_steekproefkader_versie2018-01-05_AanvIL` per ongeluk verwijderd te zijn. De poel moet dus terug toegevoegd worden aan het steekproefkader. 
+
+```{r}
+
+poelen_sk <- steekproefkader_kamsalamander %>%
+  filter(gebied == "Z0095") %>%
+  st_transform(4326)
+  
+meetnetten_kamsalamander_match %>%
+  filter(gebied == "Z0095") %>%
+  st_transform(4326) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(label = ~locatie) %>%
+  addCircleMarkers(data = poelen_sk, color = "yellow", label = ~locatie)
+```
+
+
+
+```{r}
+add_poel <- meetnetten_kamsalamander_match %>%
+  filter(locatie == "Wijgmaalbroek - Poel 4") %>%
+  select(meetnet, locatie) %>%
+  cbind(steekproefkader_kamsalamander %>%
+          filter(locatie == "Wijgmaalbroek - Poel 5") %>%
+          select(-locatie, -locatie_match, -locatie_origsk, -grts_ranking, -vlg_punt) %>%
+          st_drop_geometry())
+```
+
+
