@@ -1,0 +1,164 @@
+---
+title: "GRTS sample for UTM 1 km x 1 km raster"
+author: "Toon Westra"
+output:
+  bookdown::html_document2:
+    toc: TRUE
+    toc_depth: 2
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    number_sections: TRUE
+date: "2023-04-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning = FALSE}
+library(tidyverse)
+library(sf)
+library(n2khab)
+library(conflicted)
+library(grtsdb)
+library(leaflet)
+conflicts_prefer(dplyr::filter())
+```
+
+# UTM 1 km x 1 km raster covering Flanders 
+
+We make use of following data sources:
+
++ The shapefile `utm1.shp` that can found in this folder on the INBO cirtrix server `S:\Vlaanderen\Locatie\UTMroosters`. 
+It contains the UTM 1 km x 1 km raster covering Belgium. 
+This shapefile has to be copied in the data folder of this R project. 
+
++ The shapefile with the borders of Flanders that can be found on [Zenodo](https://zenodo.org/record/3386224#.ZEaQC3ZBygY).
+When you put this file in the following folder `C:\n2khab_data\10_raw\flanders` it can be read in R using the function `read_admin_areas` of the `n2khab` package. 
+
+```{r}
+utm1 <- read_sf("../data/utm1.shp")  %>%
+  st_transform(31370)
+
+flanders <- read_admin_areas(dsn = "flanders")
+
+utm1_flanders <- utm1 %>%
+  st_join(flanders) %>%
+  filter(name == "Vlaams Gewest")
+
+utm1_flanders_centroid <- utm1_flanders %>%
+  st_centroid()
+```
+We cobine both dataset by selecting all UTM1 raster cells that overlap with Flanders.
+
+The figure below shows the centroid of all selected UTM1 raster cells.
+
+```{r}
+utm1_flanders_centroid %>%
+  ggplot() +
+  geom_sf(data = flanders) +
+  geom_sf(alpha = 0.1)
+```
+
+# GRTS sample
+
+We use the `grtsdb` package to create a grts sample with a bounding box corresponding to the UTM 1 km x 1 km raster covering Flanders and with a cell size of 1 km.
+
+```{r}
+
+db <- connect_db()
+
+bbox <- st_bbox(utm1_flanders)
+
+bbox <- rbind(
+  x = c(bbox$xmin, bbox$xmax),
+  y = c(bbox$ymin, bbox$ymax)
+)
+  
+cellsize <- 1000
+
+add_level(bbox = bbox, cellsize = cellsize, grtsdb = db)
+ 
+```
+
+Next we assign a ranking to each UTM1 raster cell corresponding to the grts centroid that is closest to the centroid of the UTM1 raster cell.
+
+```{r}
+sample <- extract_sample(
+  grtsdb = db, samplesize = 30000, bbox = bbox, cellsize = cellsize
+)
+
+sample_sf <- st_as_sf(x = sample, coords = c("x1c", "x2c"), crs = 31370)
+
+utm1_flanders_centroid_grts <- utm1_flanders_centroid %>%
+  st_join(sample_sf, join = st_nearest_feature) %>%
+  select(TAG, ranking) %>%
+  st_drop_geometry()
+
+utm1_flanders_grts <- utm1_flanders %>%
+  left_join(utm1_flanders_centroid_grts, by = "TAG")
+```
+
+We check if the result has:
+
++ a unique rankign for every record
++ a unique UTM tag for every record
++ no UTM cell with a missing ranking
+
+All checks are OK.
+
+```{r}
+check_unique_ranking <- utm1_flanders_centroid_grts %>%
+  group_by(ranking) %>%
+  filter(n() > 1)
+
+unique_ranking <- nrow(check_unique_ranking) == 0
+
+check_unique_tag <- utm1_flanders_centroid_grts %>%
+  group_by(TAG) %>%
+  filter(n() > 1)
+
+unique_tag <- nrow(check_unique_tag) == 0
+
+check_missing_ranking <- utm1_flanders_centroid_grts %>%
+  st_drop_geometry() %>%
+  filter(is.na(ranking))
+
+no_missing_ranking <- nrow(check_missing_ranking) == 0
+```
+
+The map below show the 50 UTM1 cells with the lowest ranking.
+The map also shows the grts centroids that are within the 50 UTM1 cells. 
+
+```{r}
+utm1_flanders_grts_50 <- utm1_flanders_grts %>%
+  slice_min(order_by = ranking, n = 50) 
+
+sample_50 <- sample_sf %>%
+  st_join(select(utm1_flanders_grts_50, TAG)) %>%
+  filter(!is.na(TAG))
+
+utm1_flanders_grts_50 %>%
+  st_transform(4326) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons(label = ~ranking, labelOptions = labelOptions(noHide = TRUE)) %>%
+  addCircleMarkers(data = st_transform(sample_50, crs = 4326), color = "red", label = ~ranking)
+```
+
+# Output
+
+We write the result as a geopackage file.
+
+```{r}
+
+if (!dir.exists("../output")) {
+  
+  dir.create("../output")
+  
+}
+
+st_write(utm1_flanders_grts, "../output/utm1_flanders_grts.gpkg", delete_layer = TRUE)
+```
+
