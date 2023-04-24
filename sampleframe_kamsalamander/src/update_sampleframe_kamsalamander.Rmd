@@ -29,13 +29,13 @@ Volgende bestanden bevatten de originele grts-ranking van de punten (poelen) en 
 + `Kamsalamander_steekproefkader_versie2018-01-05_AanvIL_punten_v5_00500`
 
 ```{r}
-steekproefkader_kamsalamander_gebieden_ranking <- st_read(file.path(fileman_up("soortenmeetnetten-data"), "gis/steekproefkader/kamsalamander"), "Kamsalamander_steekproefkader_versie2018-01-05_AanvIL_polygoon_v5_00500")
+steekproefkader_kamsalamander_gebieden_ranking <- st_read(file.path(fileman_up("soortenmeetnetten-queries"), "gis/steekproefkader/kamsalamander"), "Kamsalamander_steekproefkader_versie2018-01-05_AanvIL_polygoon_v5_00500")
 
 steekproefkader_kamsalamander_gebieden_ranking <- steekproefkader_kamsalamander_gebieden_ranking %>%
   select(gebied = Zoekzone, refpoint_x = x, refpoint_y = y, grts_ranking = Ranking)  %>%
   st_transform(31370)
 
-steekproefkader_kamsalamander_punten_ranking <- st_read(file.path(fileman_up("soortenmeetnetten-data"), "gis/steekproefkader/kamsalamander"), "Kamsalamander_steekproefkader_versie2018-01-05_AanvIL_punten_v5_00500") %>%
+steekproefkader_kamsalamander_punten_ranking <- st_read(file.path(fileman_up("soortenmeetnetten-queries"), "gis/steekproefkader/kamsalamander"), "Kamsalamander_steekproefkader_versie2018-01-05_AanvIL_punten_v5_00500") %>%
   st_transform(31370) %>%
   select(locatie_origsk = Naam, grts_ranking = Ranking, wijziging = Wijziging, meetnetten = Meetnetten, Verwijder, BWmat_opm) 
 
@@ -50,7 +50,7 @@ Het volgende bestand geeft aan welke punten tot de steekproef behoren op basis v
 
 ```{r}
 
-steekproefkader_kamsalamander <- st_read(file.path(fileman_up("soortenmeetnetten-data"), "gis/steekproefkader/kamsalamander"), "Kamsalamander_steekproefkader_WGS84_versie2019-03-07")
+steekproefkader_kamsalamander <- st_read(file.path(fileman_up("soortenmeetnetten-queries"), "gis/steekproefkader/kamsalamander"), "Kamsalamander_steekproefkader_WGS84_versie2019-03-07")
 
 steekproefkader_kamsalamander <- steekproefkader_kamsalamander %>%
   select(locatie = Naam, gebied = GebiedCode, stratum = Stratum, steekproef = Steekproef, vlg_geb = Vlg_geb, vlg_punt = Vlg_punt, nStkpr_geb) %>%
@@ -274,4 +274,18 @@ add_poel <- meetnetten_kamsalamander_match %>%
           st_drop_geometry())
 ```
 
+
+# Reservepunten
+
+```{r}
+volgorde_reserve <- steekproefkader_kamsalamander %>%
+  filter(stratum == "Klein") %>%
+  group_by(gebied) %>%
+    mutate(selectie_gebied = sum(steekproef == 1) > 0) %>%
+  ungroup() %>%
+  filter(vlg_punt <= nStkpr_geb) %>%
+  arrange(vlg_geb, vlg_punt)
+  
+  
+```
 

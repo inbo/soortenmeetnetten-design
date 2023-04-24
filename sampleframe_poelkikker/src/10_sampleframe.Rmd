@@ -73,8 +73,9 @@ distribution_data_2021 %>%
 provincies <- read_admin_areas(dsn = "provinces") %>%
   select(provincie = name)
 
-populatie_wvl <- read_sf("../data/distributiondata/populaties_poelkikker_west_vlaanderen.shp", crs = 31370) %>%
-  select(area_name)
+populatie_wvl <- read_sf("../data/distributiondata/poelkikker_populaties_west_vlaanderen.shp") %>%
+  select(area_name) %>%
+  st_transform(crs = 31370)
 
 namen_wvl <- str_c(populatie_wvl$area_name, collapse = ", ")
 
@@ -332,7 +333,7 @@ Op basis van een visuele controle en expertkennis over de verspreiding van de Po
 + een aantal watervlakken aangemaakt rond waarnemingen die niet in de buurt liggen van watervlakken uit de watervlakkenlaag
 
 ```{r}
-controle <- read.csv2("../data/REVISIE Jeroen v4_TW.csv")
+controle <- read.csv2("../data/REVISIE Jeroen v4.csv")
 
 watervlakken_schrappen <- controle %>%
   filter(lot == "schrappen") %>%
@@ -342,7 +343,7 @@ watervlakken_toevoegen <- controle %>%
   filter(lot == "toevoegen") %>%
   select(polygon_id = watervlak, reden) %>%
   filter(!is.na(polygon_id)) %>%
-  filter(! polygon_id %in% selectie_poelen_steekproefkader$polygon_id)
+  filter(!polygon_id %in% selectie_poelen_steekproefkader$polygon_id)
 
 watervlakken_toevoegen_polygonen <- watersurfaces_poelkikker_buffer_sf %>%
   inner_join(watervlakken_toevoegen, by = "polygon_id") %>%
@@ -359,7 +360,9 @@ watervlakken_aanmaken_centroid <- distribution_data_sf %>%
   select(polygon_id, reden)
 
 watervlakken_aanmaken_polygonen <- watervlakken_aanmaken_centroid %>%
-  st_buffer(dist = 5) 
+  st_buffer(dist = 5) %>%
+  st_cast("MULTIPOLYGON") %>%
+  rename(geom = geometry)
 
 selectie_poelen_steekproefkader_controle <- selectie_poelen_steekproefkader %>%
   select(polygon_id, hyla_code, area_name, n_wnm, buffersize, min_jaar, max_jaar) %>%
@@ -447,7 +450,7 @@ bscols(
   leaflet(shared) %>%
   addTiles() %>%
   addPolygons(data = st_transform(watersurfaces_poelkikker_buffer250_sf, crs = 4326), popup = ~polygon_id, color = ~color_show) %>%
-  addCircleMarkers(data = distribution_data_show_sf, color = ~ifelse(to_check, "orange", "blue"), popup = ~label) %>%
+  addCircleMarkers(data = distribution_data_show_sf, color = ~ifelse(to_check, "orange", "blue"), popup = ~str_c("id =", label, "; ", datum)) %>%
   addMarkers(popup = ~polygon_id) %>%
   addMeasure(primaryLengthUnit = "meters",
     primaryAreaUnit = "sqmeters") %>%

@@ -72,11 +72,11 @@ if (!file.exists(file.hoofd)) {
     saveRDS(file = file.hoofd)
 }
 
-# file.hoofd <- readRDS("../data/GRTS0000500.rds") %>%
+# file.hoofd <- readRDS("../data/GRTS_100.rds") %>%
 #   st_as_sf()
 # 
 # st_crs(file.hoofd) <- 31370
-# saveRDS(file.hoofd, "../data/GRTS_500.rds")
+# saveRDS(file.hoofd, "../data/GRTS_100.rds")
 
 hoofd_grts <- readRDS(file.hoofd) 
 # rm(gewest)

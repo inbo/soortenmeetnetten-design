@@ -15,8 +15,9 @@ sampleframe <- read_sf("../data/steekproefkader_poelkikker.gpkg", "selectie_wate
 sampleframe_watersurfaces <- read_sf("../data/steekproefkader_poelkikker.gpkg", "watervlakken") %>%
   filter(polygon_id %in% sampleframe$polygon_id)
 
-populaties_west_vlaanderen <- read_sf("../data/populaties_poelkikker_west_vlaanderen.shp", crs = 31370) %>%
-  select(naam = area_name)
+populaties_west_vlaanderen <- read_sf("../data/poelkikker_populaties_west_vlaanderen.shp") %>%
+  select(naam = area_name) %>%
+  st_transform(crs = 31370)
 ```
 
 
@@ -59,7 +60,7 @@ gebied.basis %>%
 ### Breng barrières in rekening
 
 ```{r}
-barriere <- read_sf("../data/barriere_vl.gpkg", "barriere") %>%
+barriere <- read_sf("../data/barriere.shp", crs = 31370) %>%
   st_join(sampleframe_envelop) %>%
   filter(!is.na(envelop))
 
@@ -196,7 +197,7 @@ Voor elke gebied maken we een verfijnde clustering. Eerst splitsen we het gebied
 Alle steekproefelementen die tot eenzelfde deelgebied behoren, houden we steeds samen in een zoekzone. In \autoref{fig:deelgebieden-gebied} geven we een histogram met het aantal steekproefelementen per deelgebied. Om aan te geven wat er concreet gebeurd tonen we een kaartje met de steekproefelementen en deelgebieden van het gebied met het grootste aantal steekproefelementen\autorefp{fig:grootste}.
 
 ```{r}
-barriere.lokaal <- read_sf("../data/barriere_vl.gpkg", "barriere_lokaal") %>%
+barriere.lokaal <- read_sf("../data/barriere_lokaal.shp", crs = 31370) %>%
   st_join(sampleframe_envelop) %>%
   filter(!is.na(envelop)) %>%
   st_join(sampleframe_buffer) %>%
