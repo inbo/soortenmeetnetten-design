@@ -1,0 +1,190 @@
+---
+title: "Meetnet Kommavlinder en Heivlinder"
+subtitle: "Controle Aanpassingen aan locaties Klaverberg en Opglabbekerzavel"
+author: "Toon Westra"
+site: bookdown::bookdown_site
+output:
+  bookdown::html_document2:
+    keep_md: TRUE
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(
+  cache = FALSE,
+  autodep = TRUE,
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+```{r settings, cache = FALSE}
+
+library(sf)
+library(tidyverse)
+library(kableExtra)
+library(INBOtheme)
+library(lubridate)
+library(leaflet)
+library(n2khab)
+
+source(file.path(fileman_up("soortenmeetnetten-analysis"), "src/functions_smp.R"))
+
+data_path <- fileman_up("soortenmeetnetten-queries")
+
+conflicted::conflicts_prefer(dplyr::filter)
+```
+
+
+# Kommavlinder
+
+Probleem: locatie Opglabbekerzavel (blauwe polygoon in kaart hieronder) bevat naast de eigen secties (sectie 1 tot 12) ook de secties (sectie 13 tot 20) van locatie Klaverberg (groene polygoon). Er zijn enkel bezoeken ingevoerd voor locatie Opglabbekerzavel. Die bezoeken bevatten dus ook de tellingen voor Klaverberg.
+
+To do:
+
++ Secties 13 tot 20 van locatie Opglabbekerzavel toevoegen aan Klaverberg
++ Bezoeken voor locatie Oplabbekerzavel
+  + sectie 13 tot 20 op niet geteld zetten
+  + bezoek aanmaken voor locatie Klaverberg met tellingen secties 13 tot 20
+
+```{r}
+
+locaties_kommavlinder <- get_locations_smp() %>%
+  filter(meetnet == "Kommavlinder",
+         locatie_type == "locatie") %>%
+  filter(locatie %in% c("Klaverberg", "Opglabbekerzavel"))  %>%
+  mutate(showcolor = ifelse(locatie == "Klaverberg", "green", "blue"))
+
+secties_kommavlinder <- get_transects_smp() %>%
+  filter(meetnet == "Kommavlinder") %>%
+  filter(locatie %in% c("Klaverberg", "Opglabbekerzavel")) %>%
+  mutate(showcolor = ifelse(locatie == "Klaverberg", "green", "blue"),
+         sectie_nr = str_remove(sublocatie, "sectie"))
+```
+
+```{r}
+locaties_kommavlinder %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons(label = ~locatie , color = ~showcolor) %>%
+  addPolylines(data = secties_kommavlinder, label = ~sectie_nr, color = ~showcolor, labelOptions = labelOptions(noHide = TRUE, textOnly = TRUE))
+```
+
+```{r}
+counts_kommavlinder <- get_counts_smp(species_group = "dagvlinders") %>%
+  filter(meetnet == "Kommavlinder") %>%
+  filter(locatie %in% c("Klaverberg", "Opglabbekerzavel")) %>%
+  mutate(sectie_nr = as.numeric(str_remove(sublocatie, "sectie")),
+         transect = ifelse(sectie_nr <= 12, "sectie_1-12", "sectie_13-20"))
+
+visits_kommavlinder <- get_visits_smp(species_group = "dagvlinders")  %>%
+  filter(meetnet == "Kommavlinder") %>%
+  filter(locatie %in% c("Klaverberg", "Opglabbekerzavel"))
+
+overzicht_bezoeken_kommavlinder <- counts_kommavlinder %>%
+  mutate(soort = ifelse(soort_nl %in% c("Heivlinder", "Kommavlinder"), soort_nl, 
+                        ifelse(is.na(soort_nl), NA, "andere soort"))) %>%
+  group_by(meetnet, locatie, visit_id, datum, transect, niet_geteld, primaire_soort, soort) %>%
+  summarise(aantal = sum(aantal)) %>%
+  ungroup() %>%
+  mutate(type_soort = ifelse(primaire_soort, "doelsoort", "overige")) %>%
+  select(-primaire_soort) 
+  
+```
+
+
+# Heivlinder
+
+Probleem: locatie Klaverberg (groene polygoon in kaart hieronder) bevat naast de eigen secties (sectie 13 tot 20) ook de secties (sectie 1 tot 12) van locatie Opglabbekerzavel (blauwe polygoon). Er zijn bezoeken ingevoerd voor zowel locatie Klaverberg als locatie Opglabbekerzavel. De secties zijn identiek als bij Kommavlinder.
+
+To do:
+
++ Secties 1 tot 12 van locatie Klaverberg toevoegen aan Opglabbekerzavel
++ Bezoeken voor locatie Oplabbekerzavel en Klaverberg opsplitsen waar nodig
+
+```{r}
+
+locaties_heivlinder <- get_locations_smp() %>%
+  filter(meetnet == "Heivlinder",
+         locatie_type == "locatie") %>%
+  filter(locatie %in% c("Klaverberg", "Opglabbekerzavel"))  %>%
+  mutate(showcolor = ifelse(locatie == "Klaverberg", "green", "blue"))
+
+secties_heivlinder <- get_transects_smp() %>%
+  filter(meetnet == "Heivlinder") %>%
+  filter(locatie %in% c("Klaverberg", "Opglabbekerzavel")) %>%
+  mutate(showcolor = ifelse(locatie == "Klaverberg", "green", "blue"),
+         sectie_nr = str_remove(sublocatie, "sectie"))
+```
+
+```{r}
+locaties_heivlinder %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons(label = ~locatie , color = ~showcolor) %>%
+  addPolylines(data = secties_heivlinder, label = ~sectie_nr, color = ~showcolor, labelOptions = labelOptions(noHide = TRUE, textOnly = TRUE))
+```
+
+
+```{r}
+counts_heivlinder <- get_counts_smp(species_group = "dagvlinders") %>%
+  filter(meetnet == "Heivlinder") %>%
+  filter(locatie %in% c("Klaverberg", "Opglabbekerzavel")) %>%
+  mutate(sectie_nr = as.numeric(str_remove(sublocatie, "sectie")),
+         transect = ifelse(sectie_nr <= 12, "sectie_1-12", "sectie_13-20"))
+
+visits_heivlinder <- get_visits_smp(species_group = "dagvlinders")  %>%
+  filter(meetnet == "Heivlinder") %>%
+  filter(locatie %in% c("Klaverberg", "Opglabbekerzavel"))
+
+overzicht_bezoeken_heivlinder <- counts_heivlinder %>%
+  mutate(soort = ifelse(soort_nl %in% c("Heivlinder", "Kommavlinder"), soort_nl, 
+                        ifelse(is.na(soort_nl), NA, "andere soort"))) %>%
+  group_by(meetnet, locatie, visit_id, datum, transect, niet_geteld, primaire_soort, soort) %>%
+  summarise(aantal = sum(aantal)) %>%
+  ungroup() %>%
+  mutate(type_soort = ifelse(primaire_soort, "doelsoort", "overige")) %>%
+  select(-primaire_soort) 
+  
+```
+
+```{r}
+overzicht_bezoeken <- overzicht_bezoeken_heivlinder %>%
+  bind_rows(overzicht_bezoeken_kommavlinder) %>%
+  arrange(datum) %>%
+  select(datum, visit_id, everything()) %>%
+  mutate(locatie_correct = (locatie == "Opglabbekerzavel" & transect == "sectie_1-12") | (locatie == "Klaverberg" & transect == "sectie_13-20") | niet_geteld) %>%
+  group_by(datum, transect, soort) %>%
+  mutate(aantallen_correct = n_distinct(aantal) == 1) %>%
+  ungroup() %>%
+  group_by(datum, visit_id, meetnet, locatie, transect, niet_geteld, locatie_correct, aantallen_correct) %>%
+  summarise(telling = str_c(str_c(soort, " ", aantal), collapse = "; ")) %>%
+  ungroup() %>%
+  select(datum, visit_id, meetnet, locatie, transect, niet_geteld, telling, locatie_correct, aantallen_correct)
+  
+
+write_csv2(overzicht_bezoeken, "../output/controle_bezoeken_Opglabbekerzavel_Klaverberg.csv", na = "")
+```
+
+# Overzicht alle bezoeken voor Oplabbekerzavel en Klaverberg
+
+In Onderstaande tabel geven we een overzicht van alle bezoeken van het meetnet Kommavlinder en Heivlinder voor de locaties Oplabbekerzavel en Klaverberg, met daarin 
+
++ de totalen voor Kommavlinder en Heivlinder per transect (sectie 1-12 en sectie 13-20)
++ locatie_correct: komt de locatie overeen met de secties
++ aantallen_correct: werden er op eenzelfde datum dezelfde aantallen ingevoerd per transect en per soort 
+
+
+
+```{r}
+overzicht_bezoeken %>%
+  kable() %>%
+  kable_styling() %>%
+  collapse_rows(c(1,2), target = 1)
+```
+
