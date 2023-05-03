@@ -1,5 +1,5 @@
 ---
-title: "GRTS sample for UTM 1 km x 1 km raster"
+title: "GRTS sample for UTM 1 km x 1 km grid covering Belgium and Flanders"
 author: "Toon Westra"
 output:
   bookdown::html_document2:
@@ -9,71 +9,86 @@ output:
       collapsed: FALSE
       smooth_scroll: FALSE
     number_sections: TRUE
-date: "2023-04-24"
+date: "2023-05-03"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r, warning = FALSE}
+```{r}
+
 library(tidyverse)
 library(sf)
-library(n2khab)
-library(conflicted)
+library(giscoR)
 library(grtsdb)
+library(terra)
 library(leaflet)
+library(conflicted)
+
 conflicts_prefer(dplyr::filter())
 ```
 
-# UTM 1 km x 1 km raster covering Flanders 
+# UTM 1 km grid covering Belgium
 
-We make use of following data sources:
+The UTM 1km grid consists of grid cells of 1 km x 1 km. The coordinate reference system (CRS) is ETRS89-LAEA Europe (epsg=3035). 
+The xy-coordinates of the grid cells corners are always a multitude of 1000 meters.
+Each grid cell has a unique code based on the coordinates of the lower left corner of the grid cell.
+For example if the distance from the lower left corner of a grid cell to the origin is 3773000 meter East and 3043000 meter North, the code is `1kmE3773N3043`.
 
-+ The shapefile `utm1.shp` that can found in this folder on the INBO cirtrix server `S:\Vlaanderen\Locatie\UTMroosters`. 
-It contains the UTM 1 km x 1 km raster covering Belgium. 
-This shapefile has to be copied in the data folder of this R project. 
+We create a UTM 1km grid covering Belgium as follows:
 
-+ The shapefile with the borders of Flanders that can be found on [Zenodo](https://zenodo.org/record/3386224#.ZEaQC3ZBygY).
-When you put this file in the following folder `C:\n2khab_data\10_raw\flanders` it can be read in R using the function `read_admin_areas` of the `n2khab` package. 
++ load sf object of Belgium using the `giscoR` package (Hernangomez, 2023)
++ transform it to `crs = 3035`
++ take a buffer of 25 km
++ derive the bounding box
++ round the bounding box to a multitude of 1000
 
-```{r}
-utm1 <- read_sf("../data/utm1.shp")  %>%
-  st_transform(31370)
-
-flanders <- read_admin_areas(dsn = "flanders")
-
-utm1_flanders <- utm1 %>%
-  st_join(flanders) %>%
-  filter(name == "Vlaams Gewest")
-
-utm1_flanders_centroid <- utm1_flanders %>%
-  st_centroid()
-```
-We cobine both dataset by selecting all UTM1 raster cells that overlap with Flanders.
-
-The figure below shows the centroid of all selected UTM1 raster cells.
 
 ```{r}
-utm1_flanders_centroid %>%
-  ggplot() +
-  geom_sf(data = flanders) +
-  geom_sf(alpha = 0.1)
+
+belgium <- gisco_get_nuts(nuts_level = 2, country = "Belgium", resolution = "01") %>%
+  st_transform(crs = 3035)
+
+flanders <- belgium %>%
+  filter(NUTS_NAME %in% c("Prov. Antwerpen", 
+                          "Prov. Oost-Vlaanderen", 
+                          "Prov. West-Vlaanderen", 
+                          "Prov. Vlaams-Brabant", 
+                          "Prov. Limburg (BE)"))
+
+
+belgium_buffer <- belgium  %>%
+  st_buffer(dist = 25000)
+
+bbox_belgium_buffer <- st_bbox(belgium_buffer)
+
+xmin <- floor(bbox_belgium_buffer$xmin/1000)*1000
+ymin <- floor(bbox_belgium_buffer$ymin/1000)*1000
+xmax <- ceiling(bbox_belgium_buffer$xmax/1000)*1000
+ymax <- ceiling(bbox_belgium_buffer$ymax/1000)*1000
+
+xmin <- xmin - 1000
+ymin <- ymin - 1000
+
+x_res <- (xmax - xmin) / 1000
+y_res <- (ymax - ymin) / 1000
+
 ```
+
+
 
 # GRTS sample
 
-We use the `grtsdb` package to create a grts sample with a bounding box corresponding to the UTM 1 km x 1 km raster covering Flanders and with a cell size of 1 km.
+We use the `grtsdb` package to create a grts sample with the bounding box created above and a cell size of 1 km.
 
 ```{r}
 
 db <- connect_db()
 
-bbox <- st_bbox(utm1_flanders)
-
 bbox <- rbind(
-  x = c(bbox$xmin, bbox$xmax),
-  y = c(bbox$ymin, bbox$ymax)
+  x = c(xmin, xmax),
+  y = c(ymin, ymax)
 )
   
 cellsize <- 1000
@@ -81,75 +96,135 @@ cellsize <- 1000
 add_level(bbox = bbox, cellsize = cellsize, grtsdb = db)
  
 ```
-
-Next we assign a ranking to each UTM1 raster cell corresponding to the grts centroid that is closest to the centroid of the UTM1 raster cell.
+Next we convert the result to a raster, a point shapefile and a polygon shapefile and crop it to the extent of Belgium and Flanders.
 
 ```{r}
 sample <- extract_sample(
-  grtsdb = db, samplesize = 30000, bbox = bbox, cellsize = cellsize
+  grtsdb = db, samplesize = 100000, bbox = bbox, cellsize = cellsize
 )
 
-sample_sf <- st_as_sf(x = sample, coords = c("x1c", "x2c"), crs = 31370)
+sample_utm <- sample %>%
+  mutate(cellcode = str_c("1kmE", (x1c - 500) / 1000, "N", (x2c - 500) / 1000))
 
-utm1_flanders_centroid_grts <- utm1_flanders_centroid %>%
-  st_join(sample_sf, join = st_nearest_feature) %>%
-  select(TAG, ranking) %>%
-  st_drop_geometry()
+belgium_buffer_vector_terra <- vect(belgium_buffer)
 
-utm1_flanders_grts <- utm1_flanders %>%
-  left_join(utm1_flanders_centroid_grts, by = "TAG")
+sample_utm_raster <- sample_utm %>%
+  select(x = x1c, y = x2c, ranking) %>%
+  rast(type = "xyz", crs = crs(belgium_buffer_vector_terra))
+
+sample_utm_points_sf <- sample_utm %>%
+  st_as_sf(coords = c("x1c", "x2c"), crs = 3035)
+
+sample_utm_polygons_sf <- sample_utm %>%
+  mutate(geom = str_c("POLYGON ((", x1c - 500, " ", x2c - 500, 
+                                ",", x1c + 500, " ", x2c - 500,
+                                ",", x1c + 500, " ", x2c + 500,
+                                ",", x1c - 500, " ", x2c + 500,
+                                ",", x1c - 500, " ", x2c - 500, "))")) %>%
+  st_as_sf(wkt = "geom", crs = 3035)
+
+```
+```{r}
+
+belgium_buffer_2000 <- belgium %>%
+  group_by(CNTR_CODE) %>%
+  summarise(level = "Belgium") %>%
+  ungroup() %>%
+  st_buffer(2000) %>%
+  select(level)
+
+grts_utm1_belgium_points <- sample_utm_points_sf %>%
+  st_join(belgium_buffer_2000) %>%
+  filter(!is.na(level))
+
+grts_utm1_belgium_polygons <- sample_utm_polygons_sf %>%
+  filter(cellcode %in% grts_utm1_belgium_points$cellcode)
+
+grts_utm1_belgium_raster <- sample_utm_raster %>%
+  crop(vect(belgium_buffer_2000)) %>%
+  mask(vect(belgium_buffer_2000))
+
+flanders_buffer_2000 <- flanders %>%
+  group_by(CNTR_CODE) %>%
+  summarise(level = "flanders") %>%
+  ungroup() %>%
+  st_buffer(2000) %>%
+  select(level)
+
+grts_utm1_flanders_points <- sample_utm_points_sf %>%
+  st_join(flanders_buffer_2000) %>%
+  filter(!is.na(level))
+
+grts_utm1_flanders_polygons <- sample_utm_polygons_sf %>%
+  filter(cellcode %in% grts_utm1_flanders_points$cellcode)
+
+grts_utm1_flanders_raster <- sample_utm_raster %>%
+  crop(vect(flanders_buffer_2000)) %>%
+  mask(vect(flanders_buffer_2000))
+  
 ```
 
-We check if the result has:
+# Check result
 
-+ a unique rankign for every record
-+ a unique UTM tag for every record
-+ no UTM cell with a missing ranking
+## Belgium
 
-All checks are OK.
+The map below show the 50 UTM1 cells with the lowest ranking in Belgium.
 
 ```{r}
-check_unique_ranking <- utm1_flanders_centroid_grts %>%
-  group_by(ranking) %>%
-  filter(n() > 1)
+grts_utm1_belgium_polygons_50 <- grts_utm1_belgium_polygons %>%
+  slice_min(order_by = ranking, n = 50) %>%
+  st_transform(4326)
 
-unique_ranking <- nrow(check_unique_ranking) == 0
+grts_utm1_belgium_points_50 <- grts_utm1_belgium_points %>%
+  slice_min(order_by = ranking, n = 50) %>%
+  st_transform(4326)
 
-check_unique_tag <- utm1_flanders_centroid_grts %>%
-  group_by(TAG) %>%
-  filter(n() > 1)
-
-unique_tag <- nrow(check_unique_tag) == 0
-
-check_missing_ranking <- utm1_flanders_centroid_grts %>%
-  st_drop_geometry() %>%
-  filter(is.na(ranking))
-
-no_missing_ranking <- nrow(check_missing_ranking) == 0
-```
-
-The map below show the 50 UTM1 cells with the lowest ranking.
-The map also shows the grts centroids that are within the 50 UTM1 cells. 
-
-```{r}
-utm1_flanders_grts_50 <- utm1_flanders_grts %>%
-  slice_min(order_by = ranking, n = 50) 
-
-sample_50 <- sample_sf %>%
-  st_join(select(utm1_flanders_grts_50, TAG)) %>%
-  filter(!is.na(TAG))
-
-utm1_flanders_grts_50 %>%
-  st_transform(4326) %>%
+grts_utm1_belgium_polygons_50 %>%
   leaflet() %>%
   addTiles() %>%
   addPolygons(label = ~ranking, labelOptions = labelOptions(noHide = TRUE)) %>%
-  addCircleMarkers(data = st_transform(sample_50, crs = 4326), color = "red", label = ~ranking)
+  addCircleMarkers(data = grts_utm1_belgium_points_50, color = "red", label = ~ranking)
 ```
+
+The raster of the grts is shown below. 
+
+```{r}
+grts_utm1_belgium_raster %>%
+  plot()
+```
+
+## Flanders
+
+The map below show the 50 UTM1 cells with the lowest ranking in Flanders.
+
+```{r}
+grts_utm1_flanders_polygons_50 <- grts_utm1_flanders_polygons %>%
+  slice_min(order_by = ranking, n = 50) %>%
+  st_transform(4326)
+
+grts_utm1_flanders_points_50 <- grts_utm1_flanders_points %>%
+  slice_min(order_by = ranking, n = 50) %>%
+  st_transform(4326)
+
+grts_utm1_flanders_polygons_50 %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons(label = ~ranking, labelOptions = labelOptions(noHide = TRUE)) %>%
+  addCircleMarkers(data = grts_utm1_flanders_points_50, color = "red", label = ~ranking)
+```
+The raster of the grts is shown below. 
+
+```{r}
+grts_utm1_flanders_raster %>%
+  plot()
+```
+
 
 # Output
 
-We write the result as a geopackage file.
+We write the resulting sf objects as a geopackage file and the raster object as a tif file.
+
+We also save the sqlite file.
 
 ```{r}
 
@@ -159,6 +234,30 @@ if (!dir.exists("../output")) {
   
 }
 
-st_write(utm1_flanders_grts, "../output/utm1_flanders_grts.gpkg", delete_layer = TRUE)
+st_write(grts_utm1_belgium_points, dsn = "../output/grts_master_utm1_belgium.gpkg",
+         layer = "cell_center",
+         delete_layer = TRUE)
+
+st_write(grts_utm1_belgium_polygons, dsn = "../output/grts_master_utm1_belgium.gpkg",
+         layer = "cell_polygons",
+         delete_layer = TRUE)
+
+writeRaster(grts_utm1_belgium_raster, "../output/grts_master_utm1_belgium.tif", overwrite = TRUE)
+
+st_write(grts_utm1_flanders_points, dsn = "../output/grts_master_utm1_flanders.gpkg",
+         layer = "cell_center",
+         delete_layer = TRUE)
+
+st_write(grts_utm1_flanders_polygons, dsn = "../output/grts_master_utm1_flanders.gpkg",
+         layer = "cell_polygons",
+         delete_layer = TRUE)
+
+writeRaster(grts_utm1_flanders_raster, "../output/grts_master_utm1_flanders.tif", overwrite = TRUE)
+
+file.copy("grts.sqlite", "../output/grts_master_belgium.sqlite", overwrite = TRUE)
 ```
+
+# Reference {-}
+
+Hernangomez D (2023). giscoR: Download Map Data from GISCO API - Eurostat. <https://doi.org/10.5281/zenodo.4317946>, <https://ropengov.github.io/giscoR/>
 
