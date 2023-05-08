@@ -1,5 +1,5 @@
 ---
-title: "GRTS sample for UTM 1 km x 1 km grid covering Belgium and Flanders"
+title: "GRTS master sample for MGRS 1 km x 1 km grid covering Belgium and Flanders"
 author: "Toon Westra"
 output:
   bookdown::html_document2:
@@ -17,13 +17,14 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-
+#remotes::install_github("hrbrmstr/mgrs")
 library(tidyverse)
 library(sf)
 library(giscoR)
 library(grtsdb)
 library(terra)
 library(leaflet)
+library(mgrs)
 library(conflicted)
 
 conflicts_prefer(dplyr::filter())
@@ -38,18 +39,19 @@ Sys.setenv(OGR_CURRENT_DATE = "2023-05-03T00:00:00.000Z")
 # needed to meet Requirement 15 of the GeoPackage standard (version 1.2.1 & 1.3).
 ```
 
-# UTM 1 km grid covering Belgium
+# MGRS 1 km grid
 
-The UTM 1km grid consists of grid cells of 1 km x 1 km. The coordinate reference system (CRS) is ETRS89-LAEA Europe (epsg=3035). 
-The xy-coordinates of the grid cells corners are always a multitude of 1000 meters.
-Each grid cell has a unique code based on the coordinates of the lower left corner of the grid cell.
-For example if the distance from the lower left corner of a grid cell to the origin is 3773000 meter East and 3043000 meter North, the code is `1kmE3773N3043`.
+## Background
 
-We create a UTM 1km grid covering Belgium as follows:
+The Military Grid Reference System (MGRS), sometimes called the ‘UTM grid’, is often used to define grid cells with a certain dimension (for example 1 km x 1 km) in biodiversity monitoring. Background information can be found [here](https://github.com/inbo/tutorials/blob/mgrs/content/articles/spatial_mgrs/index.md).  
+
+## Create MGRS 1 km grid covering Belgium
+
+We create a MGRS 1km grid covering Belgium as follows:
 
 + load sf object of Belgium using the `giscoR` package (Hernangomez, 2023)
-+ transform it to `crs = 3035`
-+ take a buffer of 25 km
++ transform it to `crs = 25831`
++ take a buffer of 5 km
 + derive the bounding box
 + round the bounding box to a multitude of 1000
 
@@ -57,7 +59,7 @@ We create a UTM 1km grid covering Belgium as follows:
 ```{r}
 
 belgium <- gisco_get_nuts(nuts_level = 2, country = "Belgium", resolution = "01") %>%
-  st_transform(crs = 3035)
+  st_transform(crs = 25831)
 
 flanders <- belgium %>%
   filter(NUTS_NAME %in% c("Prov. Antwerpen", 
@@ -68,7 +70,7 @@ flanders <- belgium %>%
 
 
 belgium_buffer <- belgium  %>%
-  st_buffer(dist = 25000)
+  st_buffer(dist = 5000)
 
 bbox_belgium_buffer <- st_bbox(belgium_buffer)
 
@@ -106,6 +108,7 @@ add_level(bbox = bbox, cellsize = cellsize, grtsdb = db)
  
 ```
 Next we convert the result to a raster, a point shapefile and a polygon shapefile and crop it to the extent of Belgium and Flanders.
+We use the R package `mgrs` (Rudis, 2022) to convert xy-coordinates of the SW-corner of a 1km grid cell to the mgrs coordinate at 1 km resolution.
 
 ```{r}
 sample <- extract_sample(
@@ -113,7 +116,8 @@ sample <- extract_sample(
 )
 
 sample_utm <- sample %>%
-  mutate(cellcode = str_c("1kmE", (x1c - 500) / 1000, "N", (x2c - 500) / 1000))
+  rowwise() %>%
+  mutate(cellcode = utm_to_mgrs(zone = 31,hemisphere =  "N",easting =   x1c, northing =  x2c, precision = 2))
 
 belgium_buffer_vector_terra <- vect(belgium_buffer)
 
@@ -122,7 +126,7 @@ sample_utm_raster <- sample_utm %>%
   rast(type = "xyz", crs = crs(belgium_buffer_vector_terra))
 
 sample_utm_points_sf <- sample_utm %>%
-  st_as_sf(coords = c("x1c", "x2c"), crs = 3035)
+  st_as_sf(coords = c("x1c", "x2c"), crs = 25831)
 
 sample_utm_polygons_sf <- sample_utm %>%
   mutate(geom = str_c("POLYGON ((", x1c - 500, " ", x2c - 500, 
@@ -130,9 +134,11 @@ sample_utm_polygons_sf <- sample_utm %>%
                                 ",", x1c + 500, " ", x2c + 500,
                                 ",", x1c - 500, " ", x2c + 500,
                                 ",", x1c - 500, " ", x2c - 500, "))")) %>%
-  st_as_sf(wkt = "geom", crs = 3035)
+  st_as_sf(wkt = "geom", crs = 25831)
 
 ```
+
+
 ```{r}
 
 belgium_buffer_2000 <- belgium %>%
@@ -142,12 +148,12 @@ belgium_buffer_2000 <- belgium %>%
   st_buffer(2000) %>%
   select(level)
 
-grts_utm1_belgium_points <- sample_utm_points_sf %>%
+grts_utm1_belgium_polygons <- sample_utm_polygons_sf %>%
   st_join(belgium_buffer_2000) %>%
   filter(!is.na(level))
 
-grts_utm1_belgium_polygons <- sample_utm_polygons_sf %>%
-  filter(cellcode %in% grts_utm1_belgium_points$cellcode)
+grts_utm1_belgium_points <- sample_utm_points_sf %>%
+  filter(cellcode %in% grts_utm1_belgium_polygons$cellcode)
 
 grts_utm1_belgium_raster <- sample_utm_raster %>%
   crop(vect(belgium_buffer_2000)) %>%
@@ -160,12 +166,12 @@ flanders_buffer_2000 <- flanders %>%
   st_buffer(2000) %>%
   select(level)
 
-grts_utm1_flanders_points <- sample_utm_points_sf %>%
+grts_utm1_flanders_polygons <- sample_utm_polygons_sf %>%
   st_join(flanders_buffer_2000) %>%
   filter(!is.na(level))
 
-grts_utm1_flanders_polygons <- sample_utm_polygons_sf %>%
-  filter(cellcode %in% grts_utm1_flanders_points$cellcode)
+grts_utm1_flanders_points <- sample_utm_points_sf %>%
+  filter(cellcode %in% grts_utm1_flanders_polygons$cellcode)
 
 grts_utm1_flanders_raster <- sample_utm_raster %>%
   crop(vect(flanders_buffer_2000)) %>%
@@ -175,9 +181,48 @@ grts_utm1_flanders_raster <- sample_utm_raster %>%
 
 # Check result
 
+```{r, eval = FALSE}
+
+# here we check if the results matches with a shapefile used at INBO that contains the mgrs 1 km of Belgium
+
+utm1 <- st_read("../data/utm1.shp") %>%
+  st_transform(25831)
+
+utm1_flanders <- utm1 %>%
+  st_join(flanders) %>%
+  filter(!is.na(NUTS_NAME))
+
+utm1_flanders_centroid <- utm1_flanders %>%
+  st_centroid()
+
+check_utm1 <- utm1_flanders %>%
+  slice(10000:10100) 
+
+sample_check <- sample_utm_points_sf %>%
+  st_join(utm1_flanders) %>%
+  filter(!is.na(TAG)) %>%
+  mutate(cellcode = str_remove(cellcode, "31U")) %>%
+  mutate(check = cellcode == TAG)
+
+check_mgrs_code <- all(sample_check$check)
+  
+sample_check_show <- sample_check %>%
+  filter(cellcode %in% check_utm1$TAG) %>%
+  st_transform(4326)
+
+check_utm1 <- check_utm1 %>%
+  st_transform(crs = 4326)
+
+check_utm1 %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons() %>%
+  addCircleMarkers(data = sample_check_show)
+```
+
 ## Belgium
 
-The map below show the 50 UTM1 cells with the lowest ranking in Belgium.
+The map below show the 50 mgrs cells with the lowest ranking in Belgium.
 
 ```{r}
 grts_utm1_belgium_polygons_50 <- grts_utm1_belgium_polygons %>%
@@ -185,7 +230,7 @@ grts_utm1_belgium_polygons_50 <- grts_utm1_belgium_polygons %>%
   st_transform(4326)
 
 grts_utm1_belgium_points_50 <- grts_utm1_belgium_points %>%
-  slice_min(order_by = ranking, n = 50) %>%
+  filter(ranking %in% grts_utm1_belgium_polygons_50$ranking) %>%
   st_transform(4326)
 
 grts_utm1_belgium_polygons_50 %>%
@@ -204,7 +249,7 @@ grts_utm1_belgium_raster %>%
 
 ## Flanders
 
-The map below show the 50 UTM1 cells with the lowest ranking in Flanders.
+The map below show the 50 mgrs cells with the lowest ranking in Flanders.
 
 ```{r}
 grts_utm1_flanders_polygons_50 <- grts_utm1_flanders_polygons %>%
@@ -212,7 +257,7 @@ grts_utm1_flanders_polygons_50 <- grts_utm1_flanders_polygons %>%
   st_transform(4326)
 
 grts_utm1_flanders_points_50 <- grts_utm1_flanders_points %>%
-  slice_min(order_by = ranking, n = 50) %>%
+  filter(ranking %in% grts_utm1_flanders_polygons_50$ranking) %>%
   st_transform(4326)
 
 grts_utm1_flanders_polygons_50 %>%
@@ -263,6 +308,11 @@ st_write(grts_utm1_flanders_polygons, dsn = "../output/grts_master_utm1_flanders
 
 writeRaster(grts_utm1_flanders_raster, "../output/grts_master_utm1_flanders.tif", overwrite = TRUE)
 
+
+grts_utm1_flanders_polygons %>%
+  st_transform(crs = 31370) %>%
+  st_write("../output/grts_master_utm1_flanders_lambert72.gpkg", delete_layer = TRUE)
+
 file.copy("grts.sqlite", "../output/grts_master_belgium.sqlite", overwrite = TRUE)
 ```
 
@@ -270,3 +320,5 @@ file.copy("grts.sqlite", "../output/grts_master_belgium.sqlite", overwrite = TRU
 
 Hernangomez D (2023). giscoR: Download Map Data from GISCO API - Eurostat. <https://doi.org/10.5281/zenodo.4317946>, <https://ropengov.github.io/giscoR/>
 
+Rudis B (2022). mgrs: Convert 'MGRS' ('Military Grid Reference System') Coordinates From/To Other Coordinate Systems. R package version 0.2.3,
+  <https://gitlab.com/hrbrmstr/mgrs>.
