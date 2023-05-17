@@ -74,15 +74,15 @@ aantallen_wnm <- aantallen_wnm %>%
   
 ```
 
-## 1 x 1 km hokken volgens mgrs (aka utm1-hokken)
+## 1 x 1 km hokken volgens mgrs (aka utm1s-hokken)
 
-Als steekproefeenheid gebruiken we 1 x 1 km hokken volgens het Military Grid Reference System (meestal UTM1-hokken genoemd). 
-We maken gebruik van de geopackage `grts_master_utm1_flanders.gpkg`. 
+Als steekproefeenheid gebruiken we 1 x 1 km hokken volgens het Military Grid Reference System (vaak UTM1-hokken genoemd). 
+We maken gebruik van de geopackage `grts_master_mgrs_flanders.gpkg`. 
 Dit bestand geeft de hokken als polygonen weer en bevat een unieke ranking per hok op basis van het GRTS-algoritme.
 Deze grts-ranking gebruiken we als basis voor de steekproeftrekking.
 
 ```{r}
-grts_utm1 <- read_sf("../data/grts_master_utm1_flanders.gpkg", "cell_polygons") %>%
+grts_mgrs <- read_sf("../data/grts_master_mgrs_flanders.gpkg", "cell_polygons") %>%
   st_transform(crs = 31370)
 ```
 
@@ -130,12 +130,12 @@ Daarnaast bepalen we per hok volgende zaken:
 + de eigenaar (voor zover vermeld) (`anb_eigenaar`)
 
 ```{r}
-utm1_anb <- grts_utm1 %>%
+mgrs_anb <- grts_mgrs %>%
   st_intersection(anb_patrimonium) %>%
   mutate(area = st_area(geom)) %>%
   st_drop_geometry()
 
-utm1_anb_summary <- utm1_anb %>%
+mgrs_anb_summary <- mgrs_anb %>%
   group_by(cellcode) %>%
   arrange(type, rechten_anb, eigenaar) %>%
   summarise(anb_prop = round(sum(drop_units(area)) / (1000 * 1000), 3),
@@ -148,7 +148,7 @@ utm1_anb_summary <- utm1_anb %>%
 ```
 
 ```{r}
-utm1_anb_summary %>%
+mgrs_anb_summary %>%
   slice(1:5)
 ```
 Voor elk hok berekenen we ook het oppervlakteaandeel met erkende natuurreservaten (`enr_prop`).
@@ -158,12 +158,12 @@ Daarnaast bepalen we per hok volgende zaken:
 + naam van het reservaat (`enr_reservaat`)
 
 ```{r}
-utm1_enr <- grts_utm1 %>%
+mgrs_enr <- grts_mgrs %>%
   st_intersection(enr) %>%
   mutate(area = st_area(geom)) %>%
   st_drop_geometry()
 
-utm1_enr_summary <- utm1_enr %>%
+mgrs_enr_summary <- mgrs_enr %>%
   group_by(cellcode) %>%
   arrange(beheerder, reservaat) %>%
   summarise(enr_prop = round(sum(drop_units(area)) / (1000 * 1000), 3),
@@ -175,14 +175,14 @@ utm1_enr_summary <- utm1_enr %>%
 ```
 
 ```{r}
-utm1_enr_summary %>%
+mgrs_enr_summary %>%
   slice(1:5)
 ```
 
 
 ## Voorkomen per hok 
 
-Op basis van de aantallen bepalen we per UTM1-hok:
+Op basis van de aantallen bepalen we per mgrs-hok:
 
 + het totaal aantal waargenomen
 + de levensstadia die werden waargenomen,
@@ -196,9 +196,9 @@ aantallen <- aantallen_mn %>%
 
 aantallen_sf <- aantallen %>%
   st_as_sf(coords = c("x", "y"), crs = 31370) %>%
-  st_join(select(grts_utm1, cellcode))
+  st_join(select(grts_mgrs, cellcode))
 
-utm1_aantallen_summary <- aantallen_sf %>%
+mgrs_aantallen_summary <- aantallen_sf %>%
   st_drop_geometry() %>%
   group_by(cellcode) %>%
   arrange(levensstadium, bron, status) %>%
@@ -215,18 +215,18 @@ utm1_aantallen_summary <- aantallen_sf %>%
 
 ## Selectie van hokken in het steekproefkader
 
-Het steekproefkader bouwen we op door de informatie over toegankelijkheid en aanwezigheid van Vermiljoenkover aan elk UTM1 hok te koppelen.
+Het steekproefkader bouwen we op door de informatie over toegankelijkheid en aanwezigheid van Vermiljoenkover aan elk mgrs hok te koppelen.
 We selecteren vervolgens de hokken die voor minstens 1 % bestaan uit een gebied in beheer van ANB of een erkend natuurreservaat (ENR) EN waar de soort werd waargenomen. 
 
 ```{r}
-um1_steekproefkader_ruim <- grts_utm1 %>%
-  left_join(utm1_anb_summary, by = "cellcode") %>%
-  left_join(utm1_enr_summary, by = "cellcode") %>%
-  left_join(utm1_aantallen_summary, by = "cellcode") %>%
+um1_steekproefkader_ruim <- grts_mgrs %>%
+  left_join(mgrs_anb_summary, by = "cellcode") %>%
+  left_join(mgrs_enr_summary, by = "cellcode") %>%
+  left_join(mgrs_aantallen_summary, by = "cellcode") %>%
   mutate(anb_prop = ifelse(is.na(anb_prop), 0, anb_prop),
          enr_prop = ifelse(is.na(enr_prop), 0, enr_prop))
 
-utm1_steekproefkader_specifiek <- um1_steekproefkader_ruim %>%
+mgrs_steekproefkader_specifiek <- um1_steekproefkader_ruim %>%
   filter(!is.na(aanwezig) & aanwezig) %>%
   arrange(ranking) %>%
   mutate(toegankelijk = enr_prop + anb_prop > 0) %>%
@@ -258,7 +258,7 @@ aanwezig <- aantallen_sf %>%
   filter(aantal > 0) %>%
   st_transform(4326)
 
-steekproefkader_dissolve <- utm1_steekproefkader_specifiek %>%
+steekproefkader_dissolve <- mgrs_steekproefkader_specifiek %>%
   group_by(aanwezig) %>%
   summarise(n_hokken = n()) %>%
   ungroup()
@@ -273,7 +273,7 @@ anb_show <- anb_patrimonium %>%
   filter(!is.na(aanwezig)) %>%
   st_transform(4326)
 
-utm1_steekproefkader_specifiek %>%
+mgrs_steekproefkader_specifiek %>%
   mutate(show_color = ifelse(!toegankelijk, "red",
                              ifelse(meetnet, "yellow", "orange"))) %>%
   st_transform(crs = 4326) %>%
@@ -281,10 +281,10 @@ utm1_steekproefkader_specifiek %>%
   addTiles() %>%
   addPolygons(data = enr_show, label = ~reservaat, fillColor = "blue", group = "erkende natuurreservaten", weight = 1) %>%
   addPolygons(data = anb_show, label = ~type,  fillColor = "blue", group = "gebieden in beheer van ANB", weight = 1) %>%
-  addPolygons(color = ~show_color, label = ~ranking_rel, group = "utm1 hokken") %>%
+  addPolygons(color = ~show_color, label = ~ranking_rel, group = "mgrs hokken") %>%
   addCircleMarkers(data = aanwezig, label = ~str_c(bron, ": ", status), group = "waarnemingen") %>%
   addLayersControl(
-   overlayGroups = c("utm1 hokken", "waarnemingen", "erkende natuurreservaten", "gebieden in beheer van ANB"),
+   overlayGroups = c("mgrs hokken", "waarnemingen", "erkende natuurreservaten", "gebieden in beheer van ANB"),
   options = layersControlOptions(collapsed = FALSE)
   )
 ```
@@ -301,7 +301,7 @@ Aan deze geopackage voegen we ook volgende layers toe:
 + waarnemingen uit meetnetten.be en waarnemingen.be (inclusief nulwaarnemingen)
 
 ```{r}
-st_write(utm1_steekproefkader_specifiek, "../output/steekproefkader_vermiljoenkever.gpkg", layer = "utm1_steekproefkader", driver = "gpkg", delete_layer = TRUE)
+st_write(mgrs_steekproefkader_specifiek, "../output/steekproefkader_vermiljoenkever.gpkg", layer = "mgrs_steekproefkader", driver = "gpkg", delete_layer = TRUE)
 
 enr %>%
   select(beheerder, reservaat) %>%
@@ -335,22 +335,22 @@ library(transformr)
 
 
 time_range <- tibble(meetnet = "Vermiljoenkever",
-                     jaar = c(min(utm1_aantallen_summary$jaar_min):max(utm1_aantallen_summary$jaar_min)))
+                     jaar = c(min(mgrs_aantallen_summary$jaar_min):max(mgrs_aantallen_summary$jaar_min)))
 
-utm1_aantallen_jaar <- utm1_aantallen_summary %>%
+mgrs_aantallen_jaar <- mgrs_aantallen_summary %>%
   mutate(meetnet = "Vermiljoenkever") %>%
   left_join(time_range, by = "meetnet") %>%
   filter(jaar >= jaar_min) %>%
   filter(aanwezig) %>%
   mutate(nieuw = jaar == jaar_min)
 
-utm1_centroid <- read_sf("../data/grts_master_utm1_flanders.gpkg", "cell_center") %>%
+mgrs_centroid <- read_sf("../data/grts_master_mgrs_flanders.gpkg", "cell_center") %>%
   st_transform(crs = 31370)
   
-utm1_aantallen_jaar <- utm1_centroid %>%
-  inner_join(utm1_aantallen_jaar, by = "cellcode") 
+mgrs_aantallen_jaar <- mgrs_centroid %>%
+  inner_join(mgrs_aantallen_jaar, by = "cellcode") 
 
-animation <-  ggplot(data = utm1_aantallen_jaar) +
+animation <-  ggplot(data = mgrs_aantallen_jaar) +
   geom_sf(data = flanders, alpha = 0.2, colour = "grey") +
   geom_sf(colour = "green", size = 4, alpha = 0.6) +
   theme_void() +
