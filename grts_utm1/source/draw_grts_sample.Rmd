@@ -43,7 +43,7 @@ Sys.setenv(OGR_CURRENT_DATE = "2023-05-03T00:00:00.000Z")
 
 ## Background
 
-The Military Grid Reference System (MGRS), sometimes called the ‘UTM grid’, is often used to define grid cells with a certain dimension (for example 1 km x 1 km) in biodiversity monitoring. Background information can be found [here](https://github.com/inbo/tutorials/blob/mgrs/content/articles/spatial_mgrs/index.md).  
+The Military Grid Reference System (MGRS), sometimes called the ‘UTM grid’, is often used to define grid cells with a certain dimension (for example 1 km x 1 km) in biodiversity monitoring. Background information can be found [here](https://inbo.github.io/tutorials/articles/spatial_mgrs).  
 
 ## Create MGRS 1 km grid covering Belgium
 
