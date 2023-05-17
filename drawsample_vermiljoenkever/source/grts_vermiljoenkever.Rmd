@@ -314,7 +314,7 @@ anb_patrimonium %>%
 aantallen_sf %>%
   st_write("../output/steekproefkader_vermiljoenkever.gpkg", layer = "aantallen", driver = "gpkg", delete_layer = TRUE)
 ```
-# Figuur verspreiding
+# ANimatie verspreiding
 
 ```{r}
 belgium <- gisco_get_nuts(nuts_level = 2, country = "Belgium", resolution = "01") %>%
@@ -332,7 +332,7 @@ flanders <- belgium %>%
 ```{r}
 library(gganimate)
 library(transformr)
-library(animation)
+
 
 time_range <- tibble(meetnet = "Vermiljoenkever",
                      jaar = c(min(utm1_aantallen_summary$jaar_min):max(utm1_aantallen_summary$jaar_min)))
@@ -348,16 +348,26 @@ utm1_centroid <- read_sf("../data/grts_master_utm1_flanders.gpkg", "cell_center"
   st_transform(crs = 31370)
   
 utm1_aantallen_jaar <- utm1_centroid %>%
-  inner_join(utm1_aantallen_jaar, by = "cellcode") %>%
-  st_transform(crs = 4326)
+  inner_join(utm1_aantallen_jaar, by = "cellcode") 
 
- ggplot() +
-  #geom_sf(data = flanders, alpha = 0, colour = "grey") +
-  geom_sf(data = utm1_aantallen_jaar) +
-  transition_time(jaar) 
+animation <-  ggplot(data = utm1_aantallen_jaar) +
+  geom_sf(data = flanders, alpha = 0.2, colour = "grey") +
+  geom_sf(colour = "green", size = 4, alpha = 0.6) +
+  theme_void() +
+  transition_time(jaar)  +
+  enter_fade() +
+  ggtitle('      Jaar: {frame_time}',
+          subtitle = '        Waarnemingen Vermiljoenkever')
+
+gganimate::animate(animation, 
+                   #7 years - we want 7 frames
+                   nframes = nrow(time_range),
+                   #This tell it how fast to go
+                   fps = 1)
+
+anim_save("../output/vermiljoenkever_animatie.gif") 
 ```
 
-```{r}
-gganimate(map_vk,  "vermiljoenkever.gif", title_frame = TRUE)
-```
+
+
 
