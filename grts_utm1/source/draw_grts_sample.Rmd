@@ -1,6 +1,6 @@
 ---
-title: "GRTS master sample for MGRS 1 km x 1 km grid covering Belgium and Flanders"
-author: "Toon Westra"
+title: "GRTS master sample for MGRS 1 km x 1 km grid covering Flanders"
+author: "Toon Westra, Floris Vanderhaeghe"
 output:
   bookdown::html_document2:
     toc: TRUE
@@ -9,7 +9,7 @@ output:
       collapsed: FALSE
       smooth_scroll: FALSE
     number_sections: TRUE
-date: "2023-05-03"
+date: "2023-05-17"
 ---
 
 ```{r setup, include=FALSE}
@@ -45,16 +45,15 @@ Sys.setenv(OGR_CURRENT_DATE = "2023-05-03T00:00:00.000Z")
 
 The Military Grid Reference System (MGRS), sometimes called the ‘UTM grid’, is often used to define grid cells with a certain dimension (for example 1 km x 1 km) in biodiversity monitoring. Background information can be found [here](https://inbo.github.io/tutorials/articles/spatial_mgrs).  
 
-## Create MGRS 1 km grid covering Belgium
+## Create MGRS 1 km grid covering Flanders
 
-We create a MGRS 1km grid covering Belgium as follows:
+We create a MGRS 1km grid covering Flanders, the northern part of Belgium, as follows:
 
-+ load sf object of Belgium using the `giscoR` package (Hernangomez, 2023)
++ load sf object of Belgium using the `giscoR` package (Hernangomez, 2023) and select the Flemish provinces
 + transform it to `crs = 25831`
 + take a buffer of 5 km
 + derive the bounding box
 + round the bounding box to a multitude of 1000
-
 
 ```{r}
 
@@ -69,25 +68,33 @@ flanders <- belgium %>%
                           "Prov. Limburg (BE)"))
 
 
-belgium_buffer <- belgium  %>%
+flanders_buffer <- flanders %>%
   st_buffer(dist = 5000)
 
-bbox_belgium_buffer <- st_bbox(belgium_buffer)
+bbox_flanders_buffer <- st_bbox(flanders_buffer)
 
-xmin <- floor(bbox_belgium_buffer$xmin/1000)*1000
-ymin <- floor(bbox_belgium_buffer$ymin/1000)*1000
-xmax <- ceiling(bbox_belgium_buffer$xmax/1000)*1000
-ymax <- ceiling(bbox_belgium_buffer$ymax/1000)*1000
+xmin <- floor(bbox_flanders_buffer$xmin/1000)*1000
+ymin <- floor(bbox_flanders_buffer$ymin/1000)*1000
+xmax <- ceiling(bbox_flanders_buffer$xmax/1000)*1000
+ymax <- ceiling(bbox_flanders_buffer$ymax/1000)*1000
 
-xmin <- xmin - 1000
-ymin <- ymin - 1000
 
-x_res <- (xmax - xmin) / 1000
-y_res <- (ymax - ymin) / 1000
+# we add a row or a column when we have an odd number of rows or columns
+# otherwise the grid created with grtsdb package is not correct (point coordinates are not in the center of the cell)
 
+xres <- (xmax - xmin)/1000
+yres <- (ymax - ymin)/1000
+
+is_odd <- function(x){round(x/2) != x/2}
+
+if (is_odd(xres)) {
+  xmin = xmin - 1000
+}
+
+if (is_odd(yres)) {
+  ymin = ymin - 1000
+}
 ```
-
-
 
 # GRTS sample
 
@@ -107,7 +114,8 @@ cellsize <- 1000
 add_level(bbox = bbox, cellsize = cellsize, grtsdb = db)
  
 ```
-Next we convert the result to a raster, a point shapefile and a polygon shapefile and crop it to the extent of Belgium and Flanders.
+
+Next we convert the result to a raster, a point shapefile and a polygon shapefile and crop it to the extent of Flanders (including a buffer of 2 km).
 We use the R package `mgrs` (Rudis, 2022) to convert xy-coordinates of the SW-corner of a 1km grid cell to the mgrs coordinate at 1 km resolution.
 
 ```{r}
@@ -115,20 +123,24 @@ sample <- extract_sample(
   grtsdb = db, samplesize = 100000, bbox = bbox, cellsize = cellsize
 )
 
-sample_utm <- sample %>%
+sample_mgrs <- sample %>%
   rowwise() %>%
-  mutate(cellcode = utm_to_mgrs(zone = 31,hemisphere =  "N",easting =   x1c, northing =  x2c, precision = 2))
+  mutate(cellcode = utm_to_mgrs(zone = 31, 
+                                hemisphere =  "N",
+                                easting = x1c, 
+                                northing =  x2c, 
+                                precision = 2))
 
-belgium_buffer_vector_terra <- vect(belgium_buffer)
+flanders_buffer_vector_terra <- vect(flanders_buffer)
 
-sample_utm_raster <- sample_utm %>%
+sample_mgrs_raster <- sample_mgrs %>%
   select(x = x1c, y = x2c, ranking) %>%
-  rast(type = "xyz", crs = crs(belgium_buffer_vector_terra))
+  rast(type = "xyz", crs = crs(flanders_buffer_vector_terra))
 
-sample_utm_points_sf <- sample_utm %>%
+sample_mgrs_points_sf <- sample_mgrs %>%
   st_as_sf(coords = c("x1c", "x2c"), crs = 25831)
 
-sample_utm_polygons_sf <- sample_utm %>%
+sample_mgrs_polygons_sf <- sample_mgrs %>%
   mutate(geom = str_c("POLYGON ((", x1c - 500, " ", x2c - 500, 
                                 ",", x1c + 500, " ", x2c - 500,
                                 ",", x1c + 500, " ", x2c + 500,
@@ -141,24 +153,6 @@ sample_utm_polygons_sf <- sample_utm %>%
 
 ```{r}
 
-belgium_buffer_2000 <- belgium %>%
-  group_by(CNTR_CODE) %>%
-  summarise(level = "Belgium") %>%
-  ungroup() %>%
-  st_buffer(2000) %>%
-  select(level)
-
-grts_utm1_belgium_polygons <- sample_utm_polygons_sf %>%
-  st_join(belgium_buffer_2000) %>%
-  filter(!is.na(level))
-
-grts_utm1_belgium_points <- sample_utm_points_sf %>%
-  filter(cellcode %in% grts_utm1_belgium_polygons$cellcode)
-
-grts_utm1_belgium_raster <- sample_utm_raster %>%
-  crop(vect(belgium_buffer_2000)) %>%
-  mask(vect(belgium_buffer_2000))
-
 flanders_buffer_2000 <- flanders %>%
   group_by(CNTR_CODE) %>%
   summarise(level = "flanders") %>%
@@ -166,14 +160,14 @@ flanders_buffer_2000 <- flanders %>%
   st_buffer(2000) %>%
   select(level)
 
-grts_utm1_flanders_polygons <- sample_utm_polygons_sf %>%
+grts_mgrs_flanders_polygons <- sample_mgrs_polygons_sf %>%
   st_join(flanders_buffer_2000) %>%
   filter(!is.na(level))
 
-grts_utm1_flanders_points <- sample_utm_points_sf %>%
-  filter(cellcode %in% grts_utm1_flanders_polygons$cellcode)
+grts_mgrs_flanders_points <- sample_mgrs_points_sf %>%
+  filter(cellcode %in% grts_mgrs_flanders_polygons$cellcode)
 
-grts_utm1_flanders_raster <- sample_utm_raster %>%
+grts_mgrs_flanders_raster <- sample_mgrs_raster %>%
   crop(vect(flanders_buffer_2000)) %>%
   mask(vect(flanders_buffer_2000))
   
@@ -181,70 +175,34 @@ grts_utm1_flanders_raster <- sample_utm_raster %>%
 
 # Check result
 
+## Check the mgrs cell coordinates
+
+At INBO a shapefile is available that contains the mgrs 1 km of Belgium.
+We check if the mgrs cell coordinates created here matches with the INBO file.
+They do!
+
 ```{r, eval = FALSE}
 
 # here we check if the results matches with a shapefile used at INBO that contains the mgrs 1 km of Belgium
 
-utm1 <- st_read("../data/utm1.shp") %>%
+mgrs_inbo <- st_read("../data/utm1.shp") %>%
   st_transform(25831)
 
-utm1_flanders <- utm1 %>%
+mgrs_inbo_flanders <- mgrs_inbo %>%
   st_join(flanders) %>%
   filter(!is.na(NUTS_NAME))
 
-utm1_flanders_centroid <- utm1_flanders %>%
+mgrs_inbo_flanders_centroid <- mgrs_inbo_flanders %>%
   st_centroid()
 
-check_utm1 <- utm1_flanders %>%
-  slice(10000:10100) 
-
-sample_check <- sample_utm_points_sf %>%
-  st_join(utm1_flanders) %>%
+sample_check <- sample_mgrs_points_sf %>%
+  st_join(mgrs_inbo_flanders) %>%
   filter(!is.na(TAG)) %>%
   mutate(cellcode = str_remove(cellcode, "31U")) %>%
   mutate(check = cellcode == TAG)
 
 check_mgrs_code <- all(sample_check$check)
   
-sample_check_show <- sample_check %>%
-  filter(cellcode %in% check_utm1$TAG) %>%
-  st_transform(4326)
-
-check_utm1 <- check_utm1 %>%
-  st_transform(crs = 4326)
-
-check_utm1 %>%
-  leaflet() %>%
-  addTiles() %>%
-  addPolygons() %>%
-  addCircleMarkers(data = sample_check_show)
-```
-
-## Belgium
-
-The map below show the 50 mgrs cells with the lowest ranking in Belgium.
-
-```{r}
-grts_utm1_belgium_polygons_50 <- grts_utm1_belgium_polygons %>%
-  slice_min(order_by = ranking, n = 50) %>%
-  st_transform(4326)
-
-grts_utm1_belgium_points_50 <- grts_utm1_belgium_points %>%
-  filter(ranking %in% grts_utm1_belgium_polygons_50$ranking) %>%
-  st_transform(4326)
-
-grts_utm1_belgium_polygons_50 %>%
-  leaflet() %>%
-  addTiles() %>%
-  addPolygons(label = ~ranking, labelOptions = labelOptions(noHide = TRUE)) %>%
-  addCircleMarkers(data = grts_utm1_belgium_points_50, color = "red", label = ~ranking)
-```
-
-The raster of the grts is shown below. 
-
-```{r}
-grts_utm1_belgium_raster %>%
-  plot()
 ```
 
 ## Flanders
@@ -252,25 +210,56 @@ grts_utm1_belgium_raster %>%
 The map below show the 50 mgrs cells with the lowest ranking in Flanders.
 
 ```{r}
-grts_utm1_flanders_polygons_50 <- grts_utm1_flanders_polygons %>%
+grts_mgrs_flanders_polygons_50 <- grts_mgrs_flanders_polygons %>%
   slice_min(order_by = ranking, n = 50) %>%
   st_transform(4326)
 
-grts_utm1_flanders_points_50 <- grts_utm1_flanders_points %>%
-  filter(ranking %in% grts_utm1_flanders_polygons_50$ranking) %>%
+grts_mgrs_flanders_points_50 <- grts_mgrs_flanders_points %>%
+  filter(ranking %in% grts_mgrs_flanders_polygons_50$ranking) %>%
   st_transform(4326)
 
-grts_utm1_flanders_polygons_50 %>%
+grts_mgrs_flanders_polygons_50 %>%
   leaflet() %>%
   addTiles() %>%
   addPolygons(label = ~ranking, labelOptions = labelOptions(noHide = TRUE)) %>%
-  addCircleMarkers(data = grts_utm1_flanders_points_50, color = "red", label = ~ranking)
+  addCircleMarkers(data = grts_mgrs_flanders_points_50, color = "red", label = ~ranking)
 ```
 The raster of the grts is shown below. 
 
 ```{r}
-grts_utm1_flanders_raster %>%
+grts_mgrs_flanders_raster %>%
   plot()
+```
+
+
+## Check if the vector polygons match the raster cells
+
+In the figure below we plot a small 3 x 3 cells subset of the sample:
+
++ the raster (colored squares) 
++ polygons (dashed lines)
++ cell centers (dots)
+
+Everything looks fine.
+
+```{r}
+library(stars)
+
+raster_crop <- crop(grts_mgrs_flanders_raster, ext(550000,553000, 5660000, 5663000)) %>%
+  st_as_stars()
+
+polygons_crop <- grts_mgrs_flanders_polygons %>%
+  st_crop(xmin = 549999, xmax = 553001, ymin = 5659999, ymax = 5663001) %>%
+  select(ranking) 
+
+points_crop <- grts_mgrs_flanders_points %>%
+  st_crop(xmin = 550000, xmax = 553000, ymin = 5660000, ymax = 5663000) %>%
+  select(ranking) 
+
+ggplot() +
+  geom_sf(data = points_crop) +
+  geom_sf(data = polygons_crop, alpha = 0, linetype = 2) +
+  geom_stars(data = raster_crop, alpha = 0.6)
 ```
 
 
@@ -288,32 +277,22 @@ if (!dir.exists("../output")) {
   
 }
 
-st_write(grts_utm1_belgium_points, dsn = "../output/grts_master_utm1_belgium.gpkg",
+st_write(grts_mgrs_flanders_points, dsn = "../output/grts_master_mgrs_flanders.gpkg",
          layer = "cell_center",
          delete_layer = TRUE)
 
-st_write(grts_utm1_belgium_polygons, dsn = "../output/grts_master_utm1_belgium.gpkg",
+st_write(grts_mgrs_flanders_polygons, dsn = "../output/grts_master_mgrs_flanders.gpkg",
          layer = "cell_polygons",
          delete_layer = TRUE)
 
-writeRaster(grts_utm1_belgium_raster, "../output/grts_master_utm1_belgium.tif", overwrite = TRUE)
-
-st_write(grts_utm1_flanders_points, dsn = "../output/grts_master_utm1_flanders.gpkg",
-         layer = "cell_center",
-         delete_layer = TRUE)
-
-st_write(grts_utm1_flanders_polygons, dsn = "../output/grts_master_utm1_flanders.gpkg",
-         layer = "cell_polygons",
-         delete_layer = TRUE)
-
-writeRaster(grts_utm1_flanders_raster, "../output/grts_master_utm1_flanders.tif", overwrite = TRUE)
+writeRaster(grts_mgrs_flanders_raster, "../output/grts_master_mgrs_flanders.tif", overwrite = TRUE)
 
 
-grts_utm1_flanders_polygons %>%
+grts_mgrs_flanders_polygons %>%
   st_transform(crs = 31370) %>%
-  st_write("../output/grts_master_utm1_flanders_lambert72.gpkg", delete_layer = TRUE)
+  st_write("../output/grts_master_mgrs_flanders_lambert72.gpkg", delete_layer = TRUE)
 
-file.copy("grts.sqlite", "../output/grts_master_belgium.sqlite", overwrite = TRUE)
+file.copy("grts.sqlite", "../output/grts_master_flanders.sqlite", overwrite = TRUE)
 ```
 
 # Reference {-}
