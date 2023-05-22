@@ -1,0 +1,373 @@
+---
+title: "Steekproeftrekking meetnet Vermiljoenkever"
+output:
+  bookdown::html_document2:
+    toc: TRUE
+    toc_depth: 2
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    number_sections: TRUE
+    code_folding: hide
+date: "2023-05-16"
+---
+
+
+```{r, message=FALSE}
+#remotes::install_github("hrbrmstr/mgrs")
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(conflicted)
+library(n2khab)
+library(git2rdata)
+library(units)
+library(giscoR)
+
+conflicts_prefer(dplyr::filter())
+
+# ISO8601 timestamp to set as fixed value in the GeoPackage 
+# (to be UPDATED to the actual creation date; at least update for each version):
+Sys.setenv(OGR_CURRENT_DATE = "2023-05-03T00:00:00.000Z")
+# This is used to keep results reproducible, as the timestamp is otherwise
+# updated each time.
+# Above environment variable OGR_CURRENT_DATE is used by the GDAL driver.
+# The time precision (milliseconds) & timezone (UTC, denoted by 'Z') is
+# needed to meet Requirement 15 of the GeoPackage standard (version 1.2.1 & 1.3).
+```
+
+# Opbouw steekproefkader
+
+## Verspreidingsdata
+
+### Meetnetten.be
+
+De waarnemingen van de inhaalslag Vermiljoenkever uit de meetnetten.be-databank.
+
+```{r}
+path_mn <- fileman_up("soortenmeetnetten-queries")
+
+aantallen_mn <- read_vc(root = path_mn, file = "raw/aantallen") %>%
+  filter(meetnet == "Vermiljoenkever") 
+
+aantallen_mn <- aantallen_mn %>%
+  select(meetnet, locatie, protocol, jaar, datum, levensstadium, aantal, x, y) %>%
+  mutate(bron = "meetnetten.be",
+         status = "Goedgekeurd")
+```
+
+### Waarnemingen.be
+
+We gebruiken een export uit waarnemingen.be die terug te vinden is in [deze google drive folder](https://drive.google.com/drive/folders/1lgYwaAs2j5pghN3lfiEbxxDJYUYS6CRY).
+We selecteren enkel de waarnemingen waarvoor wordt aangegeven dat ze zeker zijn.
+
+
+```{r}
+aantallen_wnm <- read_csv2("../data/vermiljoenkever_wbe_2023-05-01.csv")
+
+aantallen_wnm <- aantallen_wnm %>%
+  select(meetnet = naam_nl, locatie = gebied, datum, levensstadium = kleed, aantal, x, y, zeker, status, opmerking = bijzonderheden) %>%
+  mutate(datum = as.Date(datum, format = "%d/%m/%Y"),
+         bron = "waarnemingen.be",
+         jaar = year(datum)) %>%
+  filter(zeker == "J")
+  
+```
+
+## 1 x 1 km hokken volgens mgrs (aka utm1s-hokken)
+
+Als steekproefeenheid gebruiken we 1 x 1 km hokken volgens het Military Grid Reference System (vaak UTM1-hokken genoemd). 
+We maken gebruik van de geopackage `grts_master_mgrs_flanders.gpkg`. 
+Dit bestand geeft de hokken als polygonen weer en bevat een unieke ranking per hok op basis van het GRTS-algoritme.
+Deze grts-ranking gebruiken we als basis voor de steekproeftrekking.
+
+```{r}
+grts_mgrs <- read_sf("../data/grts_master_mgrs_flanders.gpkg", "cell_polygons") %>%
+  st_transform(crs = 31370)
+```
+
+## Toegankelijkheid
+
+Gezien de telmethode vereist dat er schors van bomen wordt verwijderd, gaan we enkel steekproefeenheden selecteren die gebieden bevatten in beheer van ANB of erkende natuurreservaten. 
+
+### ANB patrimonium
+
+Om zicht te krijgen op de gebieden die in beheer zijn van ANB maken we gebruik van de layer `NR - ANB Patrimonium 202102` te vinden op INBO netwerk (via citrix) in volgende folder: `S:\Vlaanderen\Natuur_Bos\ANB`.
+Deze layer hebben we naar een shapefile geconverteerd met bestandsnaam `anb_patrimonium_2021-02.shp`, die we in de data-folder van dit R-project plaatsen.
+
+```{r}
+anb_patrimonium <- read_sf("../data/anb_patrimonium_2021-02.shp") %>%
+  st_transform(crs = 31370)
+
+anb_patrimonium <- anb_patrimonium %>%
+  select(beheerregio = Beheerregi, eigenaar = Eigenaar, type = TypeGebied, rechten_anb = RechtenANB, domein_id = DomeinID) %>%
+  group_by(beheerregio, eigenaar, type, rechten_anb, domein_id) %>%
+  summarise(n_pol = n()) %>%
+  ungroup()
+```
+
+### Erkende natuurreservaten
+
+Voor de erkende natuurreservaten maken we gebruik van de layer `ENR_percelen_v20160209` te vinden op INBO netwerk (via citrix) in volgende folder: `S:\Vlaanderen\Natuur_Bos\Natuurgebieden`.
+Deze layer hebben we naar een shapefile geconverteerd met bestandsnaam `enr_percelen_2016-02-09.shp`, die we in de data-folder van dit R-project plaatsen.
+
+```{r}
+enr <- read_sf("../data/enr_percelen_2016-02-09.shp") %>%
+  st_transform(crs = 31370) %>%
+  select(beheerder = Beheerder, reservaat = Reservaat) %>%
+  group_by(beheerder, reservaat) %>%
+  summarise(n_pol = n()) %>%
+  ungroup()
+```
+
+### Toegankelijkheid per hok
+
+Voor elk hok berekenen we het oppervlakteaandeel in beheer van ANB (`anb_prop`).
+Daarnaast bepalen we per hok volgende zaken:
+
++ het type domein (`anb_type`)
++ de rechten die ANB er heeft (`anb_rechten`)
++ de eigenaar (voor zover vermeld) (`anb_eigenaar`)
+
+```{r}
+mgrs_anb <- grts_mgrs %>%
+  st_intersection(anb_patrimonium) %>%
+  mutate(area = st_area(geom)) %>%
+  st_drop_geometry()
+
+mgrs_anb_summary <- mgrs_anb %>%
+  group_by(cellcode) %>%
+  arrange(type, rechten_anb, eigenaar) %>%
+  summarise(anb_prop = round(sum(drop_units(area)) / (1000 * 1000), 3),
+            anb_type = str_c(unique(type), collapse = "; "),
+            anb_rechten = str_c(unique(rechten_anb), collapse = "; "),
+            anb_eigenaar = str_c(unique(eigenaar), collapse = "; ")) %>%
+  ungroup() %>%
+  filter(anb_prop > 0.01) 
+
+```
+
+```{r}
+mgrs_anb_summary %>%
+  slice(1:5)
+```
+Voor elk hok berekenen we ook het oppervlakteaandeel met erkende natuurreservaten (`enr_prop`).
+Daarnaast bepalen we per hok volgende zaken:
+
++ de beheerder (`enr_beheerder`)
++ naam van het reservaat (`enr_reservaat`)
+
+```{r}
+mgrs_enr <- grts_mgrs %>%
+  st_intersection(enr) %>%
+  mutate(area = st_area(geom)) %>%
+  st_drop_geometry()
+
+mgrs_enr_summary <- mgrs_enr %>%
+  group_by(cellcode) %>%
+  arrange(beheerder, reservaat) %>%
+  summarise(enr_prop = round(sum(drop_units(area)) / (1000 * 1000), 3),
+            enr_beheerder = str_c(unique(beheerder), collapse = "; "),
+            enr_reservaat = str_c(unique(reservaat), collapse = "; ")) %>%
+  ungroup() %>%
+  filter(enr_prop > 0.01) 
+
+```
+
+```{r}
+mgrs_enr_summary %>%
+  slice(1:5)
+```
+
+
+## Voorkomen per hok 
+
+Op basis van de aantallen bepalen we per mgrs-hok:
+
++ het totaal aantal waargenomen
++ de levensstadia die werden waargenomen,
++ de bron van de waarneming(en) (meetnetten.be of waarnemingen.be)
++ de status van de waarneming(en) (goedgekeurd, onbehandel, ...)
++ het minimumjaar en het maximumjaar van de waarneming(en)
+
+```{r}
+aantallen <- aantallen_mn %>%
+  bind_rows(aantallen_wnm)
+
+aantallen_sf <- aantallen %>%
+  st_as_sf(coords = c("x", "y"), crs = 31370) %>%
+  st_join(select(grts_mgrs, cellcode))
+
+mgrs_aantallen_summary <- aantallen_sf %>%
+  st_drop_geometry() %>%
+  group_by(cellcode) %>%
+  arrange(levensstadium, bron, status) %>%
+  summarise(aanwezig = sum(aantal) > 0,
+            aantal = sum(aantal),
+            levensstadium = str_c(unique(levensstadium), collapse = "; "),
+            bron = str_c(unique(bron), collapse = "; "),
+            status = str_c(unique(status), collapse = "; "),
+            jaar_min = min(jaar),
+            jaar_max = max(jaar)
+            ) %>%
+  ungroup()
+```
+
+## Selectie van hokken in het steekproefkader
+
+Het steekproefkader bouwen we op door de informatie over toegankelijkheid en aanwezigheid van Vermiljoenkover aan elk mgrs hok te koppelen.
+We selecteren vervolgens de hokken die voor minstens 1 % bestaan uit een gebied in beheer van ANB of een erkend natuurreservaat (ENR) EN waar de soort werd waargenomen. 
+
+```{r}
+um1_steekproefkader_ruim <- grts_mgrs %>%
+  left_join(mgrs_anb_summary, by = "cellcode") %>%
+  left_join(mgrs_enr_summary, by = "cellcode") %>%
+  left_join(mgrs_aantallen_summary, by = "cellcode") %>%
+  mutate(anb_prop = ifelse(is.na(anb_prop), 0, anb_prop),
+         enr_prop = ifelse(is.na(enr_prop), 0, enr_prop))
+
+mgrs_steekproefkader_specifiek <- um1_steekproefkader_ruim %>%
+  filter(!is.na(aanwezig) & aanwezig) %>%
+  arrange(ranking) %>%
+  mutate(toegankelijk = enr_prop + anb_prop > 0) %>%
+  group_by(toegankelijk) %>%
+  mutate(ranking_rel = rank(ranking)) %>%
+  ungroup() %>%
+  select(cellcode, ranking, ranking_rel, toegankelijk, aanwezig, aantal, levensstadium, jaar_min, jaar_max, bron, status, everything()) %>%
+  select(-level, -x1c, -x2c) %>%
+  mutate(meetnet = toegankelijk & ranking_rel <= 30)
+```
+
+
+# Steekproeftrekking
+
+We selecteren de 30 hokken in het steekproefkader met de laagste grts-ranking.
+
+In de kaart hieronder tonen we:
+
++ de geselecteerde hokken voor het meetnet (geel)
++ de overige hokken in het steekproefkader (oranje)
++ de hokken waar de soort aanwezig is maar geen gebied in beheer van ANB en geen erkend natuurreservaat bevatten (rood)
++ de puntlocaties waar de soort werd waargenomen (blauwe cirkels)
++ de ENR en ANB-domeinen die overlappen met hokken in het steekproefkader
+
+
+```{r}
+
+aanwezig <- aantallen_sf %>%
+  filter(aantal > 0) %>%
+  st_transform(4326)
+
+steekproefkader_dissolve <- mgrs_steekproefkader_specifiek %>%
+  group_by(aanwezig) %>%
+  summarise(n_hokken = n()) %>%
+  ungroup()
+
+enr_show <- enr %>%
+  st_join(steekproefkader_dissolve) %>%
+  filter(!is.na(aanwezig)) %>%
+  st_transform(4326)
+
+anb_show <- anb_patrimonium %>%
+  st_join(steekproefkader_dissolve) %>%
+  filter(!is.na(aanwezig)) %>%
+  st_transform(4326)
+
+mgrs_steekproefkader_specifiek %>%
+  mutate(show_color = ifelse(!toegankelijk, "red",
+                             ifelse(meetnet, "yellow", "orange"))) %>%
+  st_transform(crs = 4326) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons(data = enr_show, label = ~reservaat, fillColor = "blue", group = "erkende natuurreservaten", weight = 1) %>%
+  addPolygons(data = anb_show, label = ~type,  fillColor = "blue", group = "gebieden in beheer van ANB", weight = 1) %>%
+  addPolygons(color = ~show_color, label = ~ranking_rel, group = "mgrs hokken") %>%
+  addCircleMarkers(data = aanwezig, label = ~str_c(bron, ": ", status), group = "waarnemingen") %>%
+  addLayersControl(
+   overlayGroups = c("mgrs hokken", "waarnemingen", "erkende natuurreservaten", "gebieden in beheer van ANB"),
+  options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+# Resultaat opslaan
+
+Het resultaat slaan we op als een geopackage met naam `steekproefkader_vermiljoenkever.gpkg`.
+Het veld `meetnet` geeft aan welke hokken geselecteerd werden voor het meetnet.
+
+Aan deze geopackage voegen we ook volgende layers toe:
+
++ ANB domeinen
++ ENR
++ waarnemingen uit meetnetten.be en waarnemingen.be (inclusief nulwaarnemingen)
+
+```{r}
+st_write(mgrs_steekproefkader_specifiek, "../output/steekproefkader_vermiljoenkever.gpkg", layer = "mgrs_steekproefkader", driver = "gpkg", delete_layer = TRUE)
+
+enr %>%
+  select(beheerder, reservaat) %>%
+  st_write("../output/steekproefkader_vermiljoenkever.gpkg", layer = "natuurreservaten", driver = "gpkg", delete_layer = TRUE)
+
+anb_patrimonium %>%
+  select(type, eigenaar, rechten_anb, domein_id, beheerregio) %>%
+  st_write("../output/steekproefkader_vermiljoenkever.gpkg", layer = "anb_domein", driver = "gpkg", delete_layer = TRUE)
+
+aantallen_sf %>%
+  st_write("../output/steekproefkader_vermiljoenkever.gpkg", layer = "aantallen", driver = "gpkg", delete_layer = TRUE)
+```
+# ANimatie verspreiding
+
+```{r}
+belgium <- gisco_get_nuts(nuts_level = 2, country = "Belgium", resolution = "01") %>%
+  st_transform(crs = 31370)
+
+flanders <- belgium %>%
+  filter(NUTS_NAME %in% c("Prov. Antwerpen", 
+                          "Prov. Oost-Vlaanderen", 
+                          "Prov. West-Vlaanderen", 
+                          "Prov. Vlaams-Brabant", 
+                          "Prov. Limburg (BE)"))
+```
+
+
+```{r}
+library(gganimate)
+library(transformr)
+
+
+time_range <- tibble(meetnet = "Vermiljoenkever",
+                     jaar = c(min(mgrs_aantallen_summary$jaar_min):max(mgrs_aantallen_summary$jaar_min)))
+
+mgrs_aantallen_jaar <- mgrs_aantallen_summary %>%
+  mutate(meetnet = "Vermiljoenkever") %>%
+  left_join(time_range, by = "meetnet") %>%
+  filter(jaar >= jaar_min) %>%
+  filter(aanwezig) %>%
+  mutate(nieuw = jaar == jaar_min)
+
+mgrs_centroid <- read_sf("../data/grts_master_mgrs_flanders.gpkg", "cell_center") %>%
+  st_transform(crs = 31370)
+  
+mgrs_aantallen_jaar <- mgrs_centroid %>%
+  inner_join(mgrs_aantallen_jaar, by = "cellcode") 
+
+animation <-  ggplot(data = mgrs_aantallen_jaar) +
+  geom_sf(data = flanders, alpha = 0.2, colour = "grey") +
+  geom_sf(colour = "green", size = 4, alpha = 0.6) +
+  theme_void() +
+  transition_time(jaar)  +
+  enter_fade() +
+  ggtitle('      Jaar: {frame_time}',
+          subtitle = '        Waarnemingen Vermiljoenkever')
+
+gganimate::animate(animation, 
+                   #7 years - we want 7 frames
+                   nframes = nrow(time_range),
+                   #This tell it how fast to go
+                   fps = 1)
+
+anim_save("../output/vermiljoenkever_animatie.gif") 
+```
+
+
+
+
