@@ -23,6 +23,7 @@ library(n2khab)
 library(git2rdata)
 library(units)
 library(giscoR)
+library(DT)
 
 conflicts_prefer(dplyr::filter())
 
@@ -59,22 +60,42 @@ aantallen_mn <- aantallen_mn %>%
 ### Waarnemingen.be
 
 We gebruiken een export uit waarnemingen.be die terug te vinden is in [deze google drive folder](https://drive.google.com/drive/folders/1lgYwaAs2j5pghN3lfiEbxxDJYUYS6CRY).
-We selecteren enkel de waarnemingen waarvoor wordt aangegeven dat ze zeker zijn.
+We selecteren enkel de waarnemingen waarvoor wordt aangegeven dat ze zeker zijn en die goedgekeurd werden.
 
 
 ```{r}
-aantallen_wnm <- read_csv2("../data/vermiljoenkever_wbe_2023-05-01.csv")
+aantallen_wnm_orig <- read_csv2("../data/vermiljoenkever_wbe_2023-05-01.csv")
 
-aantallen_wnm <- aantallen_wnm %>%
-  select(meetnet = naam_nl, locatie = gebied, datum, levensstadium = kleed, aantal, x, y, zeker, status, opmerking = bijzonderheden) %>%
+aantallen_wnm <- aantallen_wnm_orig %>%
+  select(id, meetnet = naam_nl, locatie = gebied, datum, levensstadium = kleed, aantal, x, y, zeker, status, opmerking = bijzonderheden) %>%
   mutate(datum = as.Date(datum, format = "%d/%m/%Y"),
          bron = "waarnemingen.be",
          jaar = year(datum)) %>%
-  filter(zeker == "J")
+  filter(zeker == "J",
+         str_detect(status, "Goedgekeurd") | aantal == 0)
   
 ```
 
-## 1 x 1 km hokken volgens mgrs (aka utm1s-hokken)
+Onderstaande waarnemingen zijn onbehandel of niet te beoordelen en worden daarom niet gebruikt voor de opbouw van het steekproefkader.
+
+```{r}
+aantallen_wnm_nt_goedgekeurd <- aantallen_wnm_orig %>%
+  select(id, datum, levensstadium = kleed, aantal, status, opmerking = bijzonderheden) %>%
+  mutate(datum = as.Date(datum, format = "%d/%m/%Y"),
+         bron = "waarnemingen.be",
+         jaar = year(datum),
+         link = str_c('<a href = "https://waarnemingen.be/observation/', id,'">', id, '</a>')) %>%
+  anti_join(aantallen_wnm, by = "id")
+
+aantallen_wnm_nt_goedgekeurd %>%
+  select(link, datum, levensstadium, aantal, opmerking, status) %>%
+  datatable(rownames = FALSE,
+            filter = "top",
+            escape = FALSE) 
+```
+
+
+## 1 x 1 km hokken volgens mgrs (aka UTM1-hokken)
 
 Als steekproefeenheid gebruiken we 1 x 1 km hokken volgens het Military Grid Reference System (vaak UTM1-hokken genoemd). 
 We maken gebruik van de geopackage `grts_master_mgrs_flanders.gpkg`. 
@@ -191,6 +212,7 @@ Op basis van de aantallen bepalen we per mgrs-hok:
 + het minimumjaar en het maximumjaar van de waarneming(en)
 
 ```{r}
+
 aantallen <- aantallen_mn %>%
   bind_rows(aantallen_wnm)
 
@@ -206,7 +228,6 @@ mgrs_aantallen_summary <- aantallen_sf %>%
             aantal = sum(aantal),
             levensstadium = str_c(unique(levensstadium), collapse = "; "),
             bron = str_c(unique(bron), collapse = "; "),
-            status = str_c(unique(status), collapse = "; "),
             jaar_min = min(jaar),
             jaar_max = max(jaar)
             ) %>%
@@ -233,7 +254,7 @@ mgrs_steekproefkader_specifiek <- um1_steekproefkader_ruim %>%
   group_by(toegankelijk) %>%
   mutate(ranking_rel = rank(ranking)) %>%
   ungroup() %>%
-  select(cellcode, ranking, ranking_rel, toegankelijk, aanwezig, aantal, levensstadium, jaar_min, jaar_max, bron, status, everything()) %>%
+  select(cellcode, ranking, ranking_rel, toegankelijk, aanwezig, aantal, levensstadium, jaar_min, jaar_max, bron,  everything()) %>%
   select(-level, -x1c, -x2c) %>%
   mutate(meetnet = toegankelijk & ranking_rel <= 30)
 ```
@@ -314,7 +335,7 @@ anb_patrimonium %>%
 aantallen_sf %>%
   st_write("../output/steekproefkader_vermiljoenkever.gpkg", layer = "aantallen", driver = "gpkg", delete_layer = TRUE)
 ```
-# ANimatie verspreiding
+# Animatie verspreiding
 
 ```{r}
 belgium <- gisco_get_nuts(nuts_level = 2, country = "Belgium", resolution = "01") %>%
@@ -341,8 +362,9 @@ mgrs_aantallen_jaar <- mgrs_aantallen_summary %>%
   mutate(meetnet = "Vermiljoenkever") %>%
   left_join(time_range, by = "meetnet") %>%
   filter(jaar >= jaar_min) %>%
-  filter(aanwezig) %>%
-  mutate(nieuw = jaar == jaar_min)
+  mutate(nieuw = jaar == jaar_min,
+         voorkomen = ifelse(aanwezig, "aanwezig", "afwezig")) 
+  
 
 mgrs_centroid <- read_sf("../data/grts_master_mgrs_flanders.gpkg", "cell_center") %>%
   st_transform(crs = 31370)
@@ -352,12 +374,15 @@ mgrs_aantallen_jaar <- mgrs_centroid %>%
 
 animation <-  ggplot(data = mgrs_aantallen_jaar) +
   geom_sf(data = flanders, alpha = 0.2, colour = "grey") +
-  geom_sf(colour = "green", size = 4, alpha = 0.6) +
+  geom_sf(aes(colour = voorkomen, shape = voorkomen), alpha = 0.8, size = 4) +
   theme_void() +
+  scale_colour_manual(values = c( "green", "grey")) +
+  scale_shape_manual(values = c( 19, 4)) +
+  labs(colour = "Waarnemingen Vermiljoenkever", shape = "Waarnemingen Vermiljoenkever") +
+  theme(legend.position = "bottom") +
   transition_time(jaar)  +
   enter_fade() +
-  ggtitle('      Jaar: {frame_time}',
-          subtitle = '        Waarnemingen Vermiljoenkever')
+  ggtitle('      Jaar: {frame_time}')
 
 gganimate::animate(animation, 
                    #7 years - we want 7 frames
