@@ -64,7 +64,7 @@ We maken gebruik van de geopackage `grts_master_mgrs_flanders.gpkg`.
 Dit bestand geeft de hokken als polygonen weer en bevat een unieke ranking per hok op basis van het GRTS-algoritme.
 Deze grts-ranking gebruiken we als basis voor de steekproeftrekking.
 
-Het bestand `grts_master_mgrs_flanders.gpkg` kan [hier](https://drive.google.com/drive/folders/1hoSdfHeq2pYntenFCujae8RS_q_w91X7) gedownload worden en wordt in data folder van dit project geplaatst.
+Het bestand `grts_master_mgrs_flanders.gpkg` kan [hier](https://drive.google.com/drive/folders/1hoSdfHeq2pYntenFCujae8RS_q_w91X7) gedownload worden en wordt in de `data` folder van dit project geplaatst.
 
 ```{r}
 grts_mgrs <- read_sf("../data/grts_master_mgrs_flanders.gpkg", "cell_polygons") %>%
@@ -277,6 +277,13 @@ mgrs_ecoregio <- grts_mgrs %>%
 
 ## Voorkomen per hok 
 
+We selecteren de hokken met aanwezigheid Nauwe korfslak en bepalen per hok:
+
++ aantal observaties
++ totaal aantal waargenomen individuen
++ minimum jaar van waarneming
++ maximum jaar van waarneming
+
 ```{r}
 
 aantallen_hok <- aantallen_nauwekorfslak %>%
@@ -320,7 +327,7 @@ Onderstaande kaart geeft een overzicht van de databronnen en afgeleide datalagen
 + Proportie leefgebied binnen elk km-hok in de ecoregio kustduinen (zie legende)
 + Hokken met aanwezigheid van Nauwe korfslak (geel omrande hokken)
 + Puntlocaties met waarnemingen van Nauwe korfslak (blauwe cirkels); klik op punten voor jaar van waarneming en aantal
-+ Polygonen met leefgebied (rode: bevat N2000 of RBB; blawue: bevat geen N2000 of RBB); klik op polygoon voor samenstelling van leefgebied
++ Polygonen met leefgebied (rode: bevat N2000 of RBB; blauwe: bevat geen N2000 of RBB); klik op polygoon voor samenstelling van leefgebied
 
 ```{r}
 
@@ -456,13 +463,17 @@ steekproefkader_sc2 %>%
   addCircleMarkers(data = aantallen_show, popup = ~show_label, group = "Aanwezigheid")
 ```
 
+## Scenario...
+
+Eventueel nog andere scenario's met gebied als steekproefeenheid.
+
 # Afgeleide datalagen opslaan
 
 De afgeleide datalagen slaan we op als een geopackage met naam `steekproefkader_nauwe_korfslak.gpkg`.
 
 
-```{r}
-st_write(mgrs_steekproefkader_ruim, "../output/steekproefkader_nauwe_korfslak.gpkg", layer = "mgrs_steekproefkader", driver = "gpkg", delete_layer = TRUE)
+```{r, eval =FALSE}
+st_write(mgrs_steekproefkader_ruim, "../output/steekproefkader_nauwe_korfslak.gpkg", layer = "mgrs_steekproefkader", driver = "gpkg", delete_layer = TRUE, delete_dsn = TRUE)
 
 ecoregions %>%
   st_write("../output/steekproefkader_nauwe_korfslak.gpkg", layer = "ecoregions", driver = "gpkg", delete_layer = TRUE)
@@ -471,6 +482,7 @@ leefgebied %>%
   st_write("../output/steekproefkader_nauwe_korfslak.gpkg", layer = "leefgebied", driver = "gpkg", delete_layer = TRUE)
 
 aantallen_nauwekorfslak %>%
+  st_as_sf(coords = c("x", "y"), crs = 31370)
   st_write("../output/steekproefkader_nauwe_korfslak.gpkg", layer = "aantallen_nauwekorfslak", driver = "gpkg", delete_layer = TRUE)
 ```
 
