@@ -24,6 +24,7 @@ library(git2rdata)
 library(units)
 library(giscoR)
 library(kableExtra)
+library(grtsdb)
 
 conflicts_prefer(dplyr::filter())
 
@@ -55,20 +56,6 @@ aantallen_mollusken_wnm <- read_vc(root = "../data", file = "data_mollusken")
 aantallen_nauwekorfslak <- aantallen_mollusken_wnm %>%
   filter(meetnet == "Nauwe korfslak")
   
-```
-
-## 1 x 1 km hokken volgens mgrs (aka utm1s-hokken)
-
-Als steekproefeenheid gebruiken we 1 x 1 km hokken volgens het Military Grid Reference System (vaak UTM1-hokken genoemd). 
-We maken gebruik van de geopackage `grts_master_mgrs_flanders.gpkg`. 
-Dit bestand geeft de hokken als polygonen weer en bevat een unieke ranking per hok op basis van het GRTS-algoritme.
-Deze grts-ranking gebruiken we als basis voor de steekproeftrekking.
-
-Het bestand `grts_master_mgrs_flanders.gpkg` kan [hier](https://drive.google.com/drive/folders/1hoSdfHeq2pYntenFCujae8RS_q_w91X7) gedownload worden en wordt in de `data` folder van dit project geplaatst.
-
-```{r}
-grts_mgrs <- read_sf("../data/grts_master_mgrs_flanders.gpkg", "cell_polygons") %>%
-  st_transform(crs = 31370)
 ```
 
 ## Potentieel leefgebied
@@ -139,7 +126,9 @@ kustduinen <- ecoregions %>%
 habitatmap <- read_habitatmap()
 
 habitatmap_leefgebied_bwk <- habitatmap %>%
-  filter(str_detect(bwk_label, bwk_codes_leefgebied)) 
+  filter(str_detect(bwk_label, bwk_codes_leefgebied)) %>%
+  select(polygon_id, bwk_code_leefgebied = bwk_label) 
+
 
 ```
 
@@ -151,21 +140,25 @@ habitatmap_stdized_leefgebied_types <- habitatmap_stdized$habitatmap_types %>%
 
 habitatmap_stdized_leefgebied_tot <- habitatmap_stdized_leefgebied_types %>%
   group_by(polygon_id) %>%
-  summarise(pleefgebied = sum(phab)) %>%
+  summarise(n2000_rbb_pleefgebied = sum(phab)) %>%
   ungroup()
 
 habitatmap_stdized_leefgebied_polygons <- habitatmap_stdized$habitatmap_polygons %>%
-  inner_join(habitatmap_stdized_leefgebied_tot, by = "polygon_id")  
+  inner_join(habitatmap_stdized_leefgebied_tot, by = "polygon_id") %>%
+  left_join(st_drop_geometry(habitatmap_leefgebied_bwk), by = c("polygon_id")) %>%
+  rename(n2000_rbb_code_leefgebied = description_orig)
 
 habitatmap_leefgebied_bwk_extra <- habitatmap_leefgebied_bwk %>%
-  filter(!polygon_id %in% habitatmap_stdized_leefgebied_polygons$polygon_id) %>%
-  select(polygon_id, description_orig = bwk_label)
+  filter(!polygon_id %in% habitatmap_stdized_leefgebied_polygons$polygon_id) 
 
 leefgebied <- habitatmap_stdized_leefgebied_polygons %>%
   rename(geometry = geom) %>%
   bind_rows(habitatmap_leefgebied_bwk_extra) %>%
-  mutate(n2000_rbb = !is.na(pleefgebied),
-         area = st_area(geometry))
+  mutate(n2000_rbb = !is.na(n2000_rbb_pleefgebied),
+         area = st_area(geometry),
+         pleefgebied = ifelse(n2000_rbb, n2000_rbb_pleefgebied, 100),
+         forest = str_detect(bwk_code_leefgebied, c("^n|^gml")) | str_detect(n2000_rbb_code_leefgebied, "91E0"),
+         forest = ifelse(is.na(forest), FALSE, forest))
 ```
 
 ### Voorkomen leefgebied en ecoregio
@@ -234,139 +227,177 @@ voorkomen_leefgebied_type %>%
 ```
 
 
+## Steekproefeenheid
 
-### Leefgebied per hok
+We maken een 250 m x 250 m grid en selecteren de punten die binnen bwk-polygonen met met geschikt leefgebied liggen en/of met aanwezigheid van de soort
 
+Elk gridpunt krijgt een unieke grts-ranking.
 
 ```{r}
+
+
+polygonen_aanwezig <- voorkomen_leefgebied %>%
+  mutate(leefgebied = !is.na(n2000_rbb),
+         pleefgebied = ifelse(!leefgebied, 0, pleefgebied),
+         pleefgebied = ifelse(is.na(pleefgebied), 100, pleefgebied),
+         n2000_rbb = ifelse(!leefgebied, FALSE, n2000_rbb),
+         forest = ifelse(!leefgebied, FALSE, forest)) %>%
+  group_by(polygon_id, region_name, leefgebied, pleefgebied, n2000_rbb, bwk_label, bwk_code_leefgebied, n2000_rbb_code_leefgebied, forest) %>%
+  summarise(aantal = sum(aantal)) %>%
+  ungroup() %>%
+  mutate(prioritair = TRUE,
+         aanwezig = TRUE)
+
+polygonen_aanwezig_sf <- habitatmap %>%
+  select(polygon_id) %>%
+  inner_join(polygonen_aanwezig, by = "polygon_id")
+
+leefgebied_afwezig <- leefgebied %>%
+  st_join(select(ecoregions, region_name)) %>%
+  filter(region_name == "Ecoregio van de kustduinen") %>%
+  anti_join(polygonen_aanwezig, by = "polygon_id") %>%
+  mutate(aantal = 0,
+         aanwezig = FALSE,
+         leefgebied = TRUE) %>%
+  mutate(prioritair = n2000_rbb & (pleefgebied >= 50 | forest))
+
+steekproefkader_polygonen <- polygonen_aanwezig_sf %>%
+  filter(region_name == "Ecoregio van de kustduinen") %>%
+  bind_rows(leefgebied_afwezig) %>%
+  filter(prioritair)
+
+polygonen_andere <- polygonen_aanwezig_sf %>%
+  filter(region_name %in% c("Ecoregio van de krijt-leemgebieden", "Ecoregio van de Midden-Vlaamse overgangsgebieden")) %>%
+  mutate(cluster = c(1,1,1,2,3)) 
+
+clusters_andere <- polygonen_andere %>%
+  group_by(cluster) %>%
+  summarise(aantam = sum(aantal)) %>%
+  ungroup()
+
+clusters_andere_buffer <- clusters_andere %>%
+  st_buffer(125) %>%
+  select(cluster)
+
+gebieden_andere <- leefgebied %>%
+  st_join(clusters_andere_buffer) %>% 
+  bind_rows(filter(polygonen_andere, !leefgebied)) %>%
+  filter(!is.na(cluster) | polygon_id %in% polygonen_andere$polygon_id) %>%
+  group_by(cluster) %>%
+  summarise(n2000_rbb = any(n2000_rbb)) %>%
+  ungroup() 
+
+
 
 rm(habitatmap)
+rm(habitatmap_stdized)
 
-mgrs_leefgebied <- grts_mgrs %>%
-  st_intersection(leefgebied) %>%
-  filter(!is.na(polygon_id)) %>%
-  mutate(area = st_area(geom)) %>%
-  st_drop_geometry() %>%
-  group_by(cellcode, n2000_rbb) %>%
-  summarise(leefgebied_pol = sum(area),
-            leefgebied_netto = sum(area * pleefgebied/100)) %>%
-  ungroup() %>%
-  mutate(leefgebied_prop = round(drop_units(leefgebied_pol)/(1000 * 1000), 3),
-         leefgebied_netto_prop = round(drop_units(leefgebied_netto)/(1000 * 1000), 3))
 
-mgrs_leefgebied_wide <- mgrs_leefgebied %>%
-  mutate(n2000_rbb = ifelse(n2000_rbb, "n2000_rbb", "geen_n2000_rbb")) %>%
-  select(-leefgebied_pol, -leefgebied_netto) %>%
-  pivot_wider(names_from = n2000_rbb, values_from = c("leefgebied_prop", "leefgebied_netto_prop"), values_fill = 0) %>%
-  select(-leefgebied_netto_prop_geen_n2000_rbb) %>%
-  mutate(leefgebied_prop_totaal = leefgebied_prop_geen_n2000_rbb + leefgebied_prop_n2000_rbb)
 ```
-### Ecoregio per hok
 
 ```{r}
-mgrs_ecoregio <- grts_mgrs %>%
-  st_join(ecoregions) %>%
-  st_drop_geometry() %>%
-  filter(!is.na(region_name)) %>%
-  group_by(cellcode) %>%
-  summarise(ecoregio = str_c(region_name, collapse = "; ")) %>%
+steekproefkader_buffer <- steekproefkader_polygonen %>%
+  st_buffer(dist = 2000)
+
+bbox_steekproefkader_buffer <- st_bbox(steekproefkader_buffer)
+
+xmin <- floor(bbox_steekproefkader_buffer$xmin/1000)*1000 - 125
+ymin <- floor(bbox_steekproefkader_buffer$ymin/1000)*1000 - 125
+xmax <- ceiling(bbox_steekproefkader_buffer$xmax/1000)*1000 + 125
+ymax <- ceiling(bbox_steekproefkader_buffer$ymax/1000)*1000 + 125
+
+
+# we add a row or a column when we have an odd number of rows or columns
+# otherwise the grid created with grtsdb package is not correct (point coordinates are not in the center of the cell)
+
+xres <- (xmax - xmin)/250
+yres <- (ymax - ymin)/250
+
+is_odd <- function(x){round(x/2) != x/2}
+
+if (is_odd(xres)) {
+  xmin = xmin - 250
+}
+
+if (is_odd(yres)) {
+  ymin = ymin - 250
+}
+```
+
+```{r}
+db <- connect_db()
+
+bbox <- rbind(
+  x = c(xmin, xmax),
+  y = c(ymin, ymax)
+)
+  
+cellsize <- 250
+
+add_level(bbox = bbox, cellsize = cellsize, grtsdb = db)
+ 
+full_grid <- extract_sample(
+  grtsdb = db, samplesize = 100000, bbox = bbox, cellsize = cellsize
+)
+
+steekproefkader_grid <- full_grid %>%
+  st_as_sf(coords = c("x1c", "x2c"), crs = 31370) %>%
+  st_join(steekproefkader_polygonen) %>%
+  filter(!is.na(polygon_id))
+
+steekproefkader_hok <- full_grid %>%
+  semi_join(steekproefkader_grid, by = "ranking") %>%
+  mutate(geom = str_c("POLYGON ((", x1c - 125, " ", x2c - 125, 
+                                ",", x1c + 125, " ", x2c - 125,
+                                ",", x1c + 125, " ", x2c + 125,
+                                ",", x1c - 125, " ", x2c + 125,
+                                ",", x1c - 125, " ", x2c - 125, "))")) %>%
+  st_as_sf(wkt = "geom", crs = 31370)
+
+steekproefkader_hok_leefgebied <- steekproefkader_hok %>%
+  st_intersection(steekproefkader_polygonen) %>%
+  group_by(ranking) %>%
+  summarise(n2000_rbb = any(n2000_rbb),
+            aanwezig = any(aanwezig)) %>%
   ungroup()
 ```
 
+Onderstaande kaart toont:
 
++ de polygonen met geschikt leefgebied
++ de gridpunten die in polygonen liggen met aanwezigheid van Nauwe korfslak (geel)
++ de gridpunten die in leefgebied polygonen liggen waar Nauwe korfslak niet is waargenomen (grijs)
 
-## Voorkomen per hok 
-
-We selecteren de hokken met aanwezigheid Nauwe korfslak en bepalen per hok:
-
-+ aantal observaties
-+ totaal aantal waargenomen individuen
-+ minimum jaar van waarneming
-+ maximum jaar van waarneming
 
 ```{r}
-
-aantallen_hok <- aantallen_nauwekorfslak %>%
-  filter(aantal > 0) %>%
-  st_as_sf(coords = c("x", "y"), crs = 31370) %>%
-  select(naam_nl, aantal, id, jaar, validatie) %>%
-  st_join(select(grts_mgrs, cellcode))
-
-mgrs_aantallen_summary <- aantallen_hok %>%
-  st_drop_geometry() %>%
-  group_by(cellcode) %>%
-  summarise(aanwezig = sum(aantal) > 0,
-            aantal_observaties = n_distinct(id),
-            aantal_totaal = sum(aantal),
-            goedgekeurd = any(str_to_lower(validatie) == "goedgekeurd"),
-            jaar_min = min(jaar),
-            jaar_max = max(jaar)
-            ) %>%
-  ungroup() 
-```
-
-
-
-
-# Overzicht databronnen
-
-```{r}
-mgrs_steekproefkader_ruim <- grts_mgrs %>%
-  left_join(mgrs_leefgebied_wide, by = "cellcode") %>%
-  left_join(mgrs_ecoregio, by = "cellcode") %>%
-  left_join(mgrs_aantallen_summary, by = "cellcode") %>%
-  filter(str_detect(ecoregio, "kustduinen")) %>%
-  filter((!is.na(leefgebied_prop_n2000_rbb)) | aanwezig) %>%
-  mutate(aanwezig = ifelse(is.na(aanwezig), FALSE, aanwezig))
-  
-
-```
-
-Onderstaande kaart geeft een overzicht van de databronnen en afgeleide datalagen:
-
-+ Proportie leefgebied binnen elk km-hok in de ecoregio kustduinen (zie legende)
-+ Hokken met aanwezigheid van Nauwe korfslak (geel omrande hokken)
-+ Puntlocaties met waarnemingen van Nauwe korfslak (blauwe cirkels); klik op punten voor jaar van waarneming en aantal
-+ Polygonen met leefgebied (rode: bevat N2000 of RBB; blauwe: bevat geen N2000 of RBB); klik op polygoon voor samenstelling van leefgebied
-
-```{r}
-
-mgrs_steekproefkader_ruim_show <- mgrs_steekproefkader_ruim %>%
+leefgebied_show <- steekproefkader_polygonen %>%
   st_transform(4326) %>%
-  filter(leefgebied_prop_totaal > 0.1 | aanwezig)
+  mutate(show_fill = ifelse(n2000_rbb, "red", "blue"),
+         show_color = ifelse(aanwezig, "yellow", "grey"))
+
+gridpunten_show <- steekproefkader_grid %>%
+  st_transform(4326) %>%
+  mutate(show_color = ifelse(aanwezig, "yellow", "grey"))
 
 aantallen_show <- aantallen_nauwekorfslak %>%
   st_as_sf(coords = c("x", "y"), crs = 31370) %>%
   st_transform(4326) %>%
   mutate(show_label = str_c("jaar = ", jaar, "; aantal = ", aantal))
 
-leefgebied_show <- leefgebied %>%
-  st_join(ecoregions) %>%
-  filter(region_name == "Ecoregio van de kustduinen") %>%
-  st_transform(4326) %>%
-  mutate(show_color = ifelse(n2000_rbb, "red", "blue"))
-
-qpal <- colorQuantile("Greens", mgrs_steekproefkader_ruim_show$leefgebied_prop_totaal, n = 5)
-
-mgrs_steekproefkader_ruim_show %>%
+leefgebied_show %>%
   leaflet() %>%
   addTiles(group = "OSM") %>%
   addProviderTiles(providers$Esri.WorldImagery, group = "Esri") %>%
-  addPolygons(fillColor = ~qpal(leefgebied_prop_totaal), fillOpacity = 0.8,
-              stroke = FALSE, group = "Proportie leefgebied binnen hok") %>%
-  addPolygons(data = filter(mgrs_steekproefkader_ruim_show, aanwezig), fill = FALSE, color = "yellow", group = "Aanwezigheid binnen hok") %>%
-  addPolygons(data = leefgebied_show, fillColor = ~show_color, stroke = FALSE, popup = ~description_orig, group = "Leefgebied") %>%
-  addCircleMarkers(data = aantallen_show, popup = ~show_label, group = "Aanwezigheid") %>%
-  addLegend("bottomright", pal = qpal, values = ~leefgebied_prop_totaal,
-    title = "Proportie leefgebied binnen hok",
-    opacity = 1
-  ) %>%
+  addPolygons(fillColor = ~show_fill, label = ~ifelse(!is.na(n2000_rbb_code_leefgebied), n2000_rbb_code_leefgebied, bwk_code_leefgebied), group = "Polygonen steekproefkader") %>%
+  addCircleMarkers(data = aantallen_show, popup = ~show_label, stroke = FALSE, group = "Aanwezigheid") %>%
+  addCircleMarkers(data = gridpunten_show, color = ~show_color, group = "250 m x 250 m grid") %>%
   addLayersControl(
     baseGroups = c("OSM", "Esri"),
-   overlayGroups = c("Proportie leefgebied binnen hok", "Aanwezigheid binnen hok", "Aanwezigheid", "Leefgebied"),
+   overlayGroups = c("Polygonen steekproefkader", "Aanwezigheid", "250 m x 250 m grid"),
     options = layersControlOptions(collapsed = FALSE)
   )
 ```
+
 
 # Scenario's meetnet
 
@@ -374,16 +405,6 @@ mgrs_steekproefkader_ruim_show %>%
 
 Binnen een steekproefeenheid wordt een gebied van ongeveer 1 hectare geselecteerd waarbinnen op een aantal kansrijke locaties visueel gezocht wordt naar Nauwe korfslak gedurende een vaste tijdsperiode (bv. 1 uur).
 
-## Defenitie steekproefeenheid: gebied of km-hok
-
-+ Gebied
-  + voordeel: makkelijker om te lokaliseren op terrein
-  + nadeel: verschillende groottes
-  
-+ Km-hok
-  + voordeel: vergemakkelijkt automatisatie en steekproeftrekking; steekproefeenheden even groot
-  + nadeek: moeilijker om te lokaliseren/visualiseren op terrein
-  
 ## Welke steekproefeenheden opnemen in steekproefkader
 
 + Wanneer we geïnteresseerd zijn in trends in aantallen, kunnen we ons best beperken tot de steekproefeenheden met aanwezigheid van Nauwe korfslak
@@ -394,78 +415,133 @@ Binnen een steekproefeenheid wordt een gebied van ongeveer 1 hectare geselecteer
 
 We veronderstellen dat er jaarlijks 10 steekproefeenheden kunnen bemonsterd worden.
 
-## Scenario 1: trend in aantallen; steekproefeenheid = km-hok
 
-+ 40 km-hokken met aanwezigheid Nauwe korfslak
-+ We selecteren alle hokken in meetnet
-+ Jaarlijks 10 hokken
-+ Meetcyclus van 4 jaar
+## Scenario 1 trend in aantallen; steekproefeenheid = punten op 250 m x 250 m grid
+
++ Enkel punten in bwk-polygonen met aanwezigheid van Nauwe korfslak
++ Selectie van 40 punten van de 84
++ 10 per jaar
+
+```{r}
+overzicht <- steekproefkader_grid %>%
+  st_drop_geometry() %>%
+  group_by(aanwezig, leefgebied) %>%
+  summarise(n_steekproefkader = n()) %>%
+  ungroup()
+```
+Onderstaande kaart toont de geselecteerde punten (geel) en de verdeling over de 4 jaar binnen de meetcyclus. De selectie en verdeling is gebaseerd op de grts-ranking. De niet geselecteerde punten worden in het blauw weergegeven.
 
 ```{r}
 
-n_year <- 10
+n_year <- 4
+n <- 40
 
-steekproefkader_sc1 <- mgrs_steekproefkader_ruim %>%
+steekproefkader_sc3 <- steekproefkader_grid %>%
   filter(aanwezig) %>%
   mutate(ranking_rel = rank(ranking),
-         panel = ceiling(ranking_rel / n_year))
-
+         panel = ceiling(ranking_rel / 10)) %>%
+  mutate(steekproef = ranking_rel <= n) %>%
+  mutate(show_color = ifelse(steekproef, "yellow", "blue"))
+  
 ```
-
-Onderstaande kaart geeft de verdeling van de 1km-hokken over de 4 jaar binnen de meetcyclus. Deze verdeling is gebaseerd op de grts-ranking.
 
 ```{r}
 
-aantallen_show <- aantallen_show %>%
-  st_transform(31370) %>%
-  st_join(ecoregions) %>%
-  filter(region_name == "Ecoregio van de kustduinen") %>%
+show_steekproef <- steekproefkader_sc3 %>%
+  st_transform(4326) %>%
+  filter(steekproef)
+
+show_rest <- steekproefkader_sc3 %>%
+  st_transform(4326) %>%
+  filter(!steekproef)
+
+show_steekproef %>% 
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(label = ~panel, labelOptions = labelOptions(noHide = TRUE), color = ~show_color) %>%
+  addCircleMarkers(data = show_rest,  color = ~show_color)
+```
+
+## Scenario 2 trend in verspreiding; steekproefeenheid = punten op 250 m x 250 m grid
+
++ Punten waarvan het centrum ligt in bwk-polygonen met aanwezigheid van Nauwe korfslak en/of met prioritair leefgebied (met minstens 50% n2000 habitat of rbb)
++ Selectie van 60 punten
++ 10 per jaar
++ locaties buiten de ecoregio Kustduinen worden om de 6 jaar geteld
+
+```{r}
+
+n_year <- 6
+n <- 60
+
+steekproefkader_sc4 <- steekproefkader_grid %>%
+  mutate(ranking_rel = rank(ranking),
+         panel = ceiling(ranking_rel / 10)) %>%
+  mutate(steekproef = ranking_rel <= n) %>%
+  mutate(show_color = ifelse(aanwezig, 
+                             ifelse(steekproef, "yellow", "blue"),
+                             ifelse(steekproef, "orange", "grey")))
+  
+```
+
+Onderstaande tabel toont het resultaat van de steekproeftrekking. 
+Van de 60 geselecteerde punten liggen er 40 in polygonen waar de soort nog niet is waargenomen.
+
+Het resultaat is te zien in onderstaande kaart:
+
++ steekproefpunten in polygonen met aanwezigheid van soort (geel)
++ steekproefpunten in polygonen met afwezigheid van soort (oranje)
++ niet geselecteerde punten in polygonen met aanwezigheid van soort (blauw) 
++ niet geselecteerde punten in polygonen met aanwezigheid van soort (grijs) 
+
+Voor de steekproefpunten tonen we in de kaart ook het geschikt leefgebied binnen het 250 m x 250 m hok. Dit zijn dus de te onderzoeken gebieden.
+
+We tonen ten slotte de gebieden buiten de ecoregio Kustduinen.
+
+```{r}
+steekproefkader_sc4 %>%
+  st_drop_geometry() %>%
+  rename(kleur = show_color) %>%
+  group_by(steekproef, aanwezig, kleur) %>%
+  summarise(n_punten = n()) %>%
+  ungroup() %>%
+  kable() %>%
+  kable_styling()
+```
+
+
+```{r}
+
+show_steekproef <- steekproefkader_sc4 %>%
+  st_transform(4326) %>%
+  filter(steekproef)
+
+show_rest <- steekproefkader_sc4 %>%
+  st_transform(4326) %>%
+  filter(!steekproef)
+
+show_hok <- steekproefkader_hok_leefgebied %>%
+  filter(ranking %in% show_steekproef$ranking) %>%
   st_transform(4326)
 
-steekproefkader_sc1 %>%
-  st_transform(4326) %>%
+show_steekproef %>% 
   leaflet() %>%
-  addTiles() %>%
-  addPolygons(label = ~panel, labelOptions = labelOptions(noHide = TRUE)) %>%
-  addCircleMarkers(data = aantallen_show, popup = ~show_label, group = "Aanwezigheid")
+  addTiles(group = "OSM") %>%
+  addProviderTiles(providers$Esri.WorldImagery, group = "Orthofoto") %>%
+  addCircleMarkers(label = ~panel, labelOptions = labelOptions(noHide = TRUE), color = ~show_color, group = "Gridpunten steekproef") %>%
+  addCircleMarkers(data = show_rest,  color = ~show_color, group = "Gridpunten niet in steekproef") %>%
+  addPolygons(data = show_hok, fillOpacity = 0.1, color = "black", group = "Gebieden steekproef") %>%
+  addPolygons(data = st_transform(gebieden_andere, 4326), fillOpacity = 0.1, color = "black", group = "Gebieden buiten ecoregio Kustduinen") %>%
+  addCircleMarkers(data = aantallen_show, popup = ~show_label, stroke = FALSE, group = "Aanwezigheid nauwe korfslak") %>%
+  addLayersControl(
+    baseGroups = c("OSM", "Orthofoto"),
+   overlayGroups = c("Gridpunten steekproef", "Gridpunten niet in steekproef", "Gebieden steekproef", "Aanwezigheid nauwe korfslak", "Gebieden buiten ecoregio Kustduinen"),
+    options = layersControlOptions(collapsed = FALSE))
 ```
 
+# Selectie scenario
 
-## Scenario 2: trend in verspreiding; steekproefeenheid = km-hok
-
-+ 40 km-hokken met aanwezigheid Nauwe korfslak
-+ 21 km-hokken zonder aanwezigheid maar met minstens 20% geschikt leefgebied
-+ We selecteren alle hokken in meetnet
-+ Jaarlijks 10 hokken
-+ Meetcyclus van 6 jaar
-
-```{r}
-
-n_year <- 10
-
-steekproefkader_sc2 <- mgrs_steekproefkader_ruim %>%
-  filter(aanwezig | leefgebied_prop_totaal >= 0.2) %>%
-  mutate(ranking_rel = rank(ranking),
-         panel = ceiling(ranking_rel / n_year)) %>%
-  mutate(panel = ifelse(panel > 6, 6, panel))
-
-```
-
-Onderstaande kaart geeft de verdeling van de 1km-hokken over de 6 jaar binnen de meetcyclus. Deze verdeling is gebaseerd op de grts-ranking.
-
-```{r}
-
-steekproefkader_sc2 %>%
-  st_transform(4326) %>%
-  leaflet() %>%
-  addTiles() %>%
-  addPolygons(label = ~panel, labelOptions = labelOptions(noHide = TRUE)) %>%
-  addCircleMarkers(data = aantallen_show, popup = ~show_label, group = "Aanwezigheid")
-```
-
-## Scenario...
-
-Eventueel nog andere scenario's met gebied als steekproefeenheid.
+We selecteren scenario 2.
 
 # Afgeleide datalagen opslaan
 
@@ -473,16 +549,20 @@ De afgeleide datalagen slaan we op als een geopackage met naam `steekproefkader_
 
 
 ```{r, eval =FALSE}
-st_write(mgrs_steekproefkader_ruim, "../output/steekproefkader_nauwe_korfslak.gpkg", layer = "mgrs_steekproefkader", driver = "gpkg", delete_layer = TRUE, delete_dsn = TRUE)
+st_write(steekproefkader_sc4, "../output/steekproefkader_nauwe_korfslak.gpkg", layer = "steekproefkader_gridpunten", driver = "gpkg", delete_layer = TRUE, delete_dsn = TRUE)
 
-ecoregions %>%
-  st_write("../output/steekproefkader_nauwe_korfslak.gpkg", layer = "ecoregions", driver = "gpkg", delete_layer = TRUE)
+steekproefkader_hok_leefgebied %>%
+  st_write("../output/steekproefkader_nauwe_korfslak.gpkg", layer = "steekproefkader_gebieden", driver = "gpkg", delete_layer = TRUE)
+  
 
 leefgebied %>%
   st_write("../output/steekproefkader_nauwe_korfslak.gpkg", layer = "leefgebied", driver = "gpkg", delete_layer = TRUE)
 
 aantallen_nauwekorfslak %>%
-  st_as_sf(coords = c("x", "y"), crs = 31370)
+  st_as_sf(coords = c("x", "y"), crs = 31370) %>%
   st_write("../output/steekproefkader_nauwe_korfslak.gpkg", layer = "aantallen_nauwekorfslak", driver = "gpkg", delete_layer = TRUE)
+
+gebieden_andere %>%
+  st_write("../output/steekproefkader_nauwe_korfslak.gpkg", layer = "gebieden_extra", driver = "gpkg", delete_layer = TRUE)
 ```
 

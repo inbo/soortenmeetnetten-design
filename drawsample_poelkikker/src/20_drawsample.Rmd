@@ -33,9 +33,9 @@ sampleframe <- read_sf("../output/zoekzone.gpkg", "elementen")
 # minafstand.hoofd <- min(afstand.hoofd)
 
 # zoekzone_centroid <- zoekzone_centroid %>%
-#   filter(zoekzone != "Z0013") %>%
-#   filter(zoekzone != "Z0012")  %>%
-#   filter(zoekzone != "Z0056")
+#   dplyr::filter(zoekzone != "Z0013") %>%
+#   dplyr::filter(zoekzone != "Z0012")  %>%
+#   dplyr::filter(zoekzone != "Z0056")
 
 afstand_hoofd <- st_distance(zoekzone_centroid)
 diag(afstand_hoofd) <- Inf
@@ -109,7 +109,7 @@ rm(hoofd_grts)
 
 # zoekzone.centroid.ll <- spTransform(zoekzone_finaal_centroid, 4326)
 
-leaflet(st_transform(zoekzone, 4326)) %>%
+leaflet(st_transform(zoekzone_polygonen, 4326)) %>%
   addTiles() %>%
   addPolygons(label = ~zoekzone) %>%
   addLabelOnlyMarkers(
@@ -225,7 +225,7 @@ sampleframe <- sampleframe %>%
 ```{r toon_steekproef_grootste_gebied}
 
 grootste_gebied_elementen <- sampleframe %>%
-  filter(gebied_id %in% grootste_gebied$gebied_id)
+  dplyr::dplyr::filter(gebied_id %in% grootste_gebied$gebied_id)
 
 leaflet(st_transform(grootste_gebied, 4326)) %>%
   addTiles() %>%
@@ -297,7 +297,7 @@ check_unique_ranking <- sampleframe %>%
          check = n_distinct(ranking_element) < n_elementen,
          volgorde_element2 = rank(volgorde_element + n_elementen*subrank)) %>%
   ungroup() %>%
-  filter(check) %>%
+  dplyr::filter(check) %>%
   arrange(zoekzone, volgorde_element2)
 
 set.seed(487363)
@@ -317,7 +317,7 @@ sample_elementen <- sampleframe %>%
 
 zoekzone_selectie <- sample_elementen %>%
   st_drop_geometry() %>%
-  filter(selectelement) %>%
+  dplyr::filter(selectelement) %>%
   distinct(zoekzone)
 
 sample_zoekzone <- zoekzone_polygonen %>%
