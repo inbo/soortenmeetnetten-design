@@ -494,7 +494,7 @@ Het resultaat is te zien in onderstaande kaart:
 + niet geselecteerde punten in polygonen met aanwezigheid van soort (blauw) 
 + niet geselecteerde punten in polygonen met aanwezigheid van soort (grijs) 
 
-Voor de steekproefpunten tonen we in de kaart ook het geschikt leefgebied binnen het 250 m x 250 m hok. Dit zijn dus de te onderzoeken gebieden.
+Als je op de steekproefpunten klikt, zie je de ranking van het punt en het jaar binnen de 6-jarige cyclus waarin het punt geteld wordt.
 
 We tonen ten slotte de gebieden buiten de ecoregio Kustduinen.
 
@@ -528,11 +528,11 @@ show_steekproef %>%
   leaflet() %>%
   addTiles(group = "OSM") %>%
   addProviderTiles(providers$Esri.WorldImagery, group = "Orthofoto") %>%
-  addCircleMarkers(label = ~panel, labelOptions = labelOptions(noHide = TRUE), color = ~show_color, group = "Gridpunten steekproef") %>%
-  addCircleMarkers(data = show_rest,  color = ~show_color, group = "Gridpunten niet in steekproef") %>%
   addPolygons(data = show_hok, fillOpacity = 0.1, color = "black", group = "Gebieden steekproef") %>%
+  addCircleMarkers(data = show_rest,  popup = ~show_color, group = "Gridpunten niet in steekproef") %>%
   addPolygons(data = st_transform(gebieden_andere, 4326), fillOpacity = 0.1, color = "black", group = "Gebieden buiten ecoregio Kustduinen") %>%
   addCircleMarkers(data = aantallen_show, popup = ~show_label, stroke = FALSE, group = "Aanwezigheid nauwe korfslak") %>%
+  addCircleMarkers(popup = ~str_c("ranking = ", ranking, "; jaar = ", panel), color = ~show_color, group = "Gridpunten steekproef") %>%
   addLayersControl(
     baseGroups = c("OSM", "Orthofoto"),
    overlayGroups = c("Gridpunten steekproef", "Gridpunten niet in steekproef", "Gebieden steekproef", "Aanwezigheid nauwe korfslak", "Gebieden buiten ecoregio Kustduinen"),
