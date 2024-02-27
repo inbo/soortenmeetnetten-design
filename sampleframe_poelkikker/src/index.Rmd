@@ -38,6 +38,8 @@ library(leaflet.extras)
 library(crosstalk)
 library(DT)
 
+conflicted::conflicts_prefer(dplyr::filter)
+
 doel.crs <- "+init=epsg:31370"
 ```
 
