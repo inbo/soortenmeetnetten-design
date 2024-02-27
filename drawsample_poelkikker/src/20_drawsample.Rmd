@@ -225,7 +225,7 @@ sampleframe <- sampleframe %>%
 ```{r toon_steekproef_grootste_gebied}
 
 grootste_gebied_elementen <- sampleframe %>%
-  dplyr::dplyr::filter(gebied_id %in% grootste_gebied$gebied_id)
+  dplyr::filter(gebied_id %in% grootste_gebied$gebied_id)
 
 leaflet(st_transform(grootste_gebied, 4326)) %>%
   addTiles() %>%
