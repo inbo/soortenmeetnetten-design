@@ -6,7 +6,8 @@
 We maken gebruik van de watervlakkenlaag versie 2020.
 
 ```{r}
-watersurfaces <- read_watersurfaces()
+watersurfaces <- read_watersurfaces(version = "watersurfaces_v1.1")
+
 ```
 
 
