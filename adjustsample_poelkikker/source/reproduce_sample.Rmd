@@ -126,6 +126,12 @@ aantallen_poelkikker_dna <- aantallen_poelkikker %>%
   left_join(covar_poelkikker_wide, by = "visit_id") %>%
   mutate(aantal = ifelse(is.na(aantal_larven_totaal), NA, aantal))
 
+aantallen_poelkikker_roepkoren <- aantallen_poelkikker %>%
+  filter(protocol == "Padden en kikkers - Roepkoren") %>%
+  group_by(meetnet, protocol, locatie, soort_nl) %>%
+  summarise(aantal =sum(aantal)) %>%
+  ungroup()
+
 locaties_poelkikker <- locaties_poelkikker %>%
   select(province, locatie, is_active, polygon_id_nearest, polygon_id, zoekzone, volgorde_zoekzone, volgorde_element) %>%
   left_join(aantallen_poelkikker_dna, by = c("locatie"))
@@ -140,7 +146,7 @@ samplesize_poelkikker <- tibble(province = c("West-Vlaanderen", "Antwerpen", "Li
 locaties_poelkikker_steekproef <- locaties_poelkikker %>%
   left_join(samplesize_poelkikker, by = "province") %>%
   mutate(geschikt = aantal > 0 | is.na(aantal),
-         geschikt = ifelse(locatie == "Vloethemveld - Poel 1", FALSE, geschikt)) %>%
+         geschikt = ifelse(locatie %in% c("Vloethemveld - Poel 1", "Heitegemstraat - Poel 1"), FALSE, geschikt)) %>%
   filter(is_active) %>%
   mutate(select_expert_based = locatie %in% c("Rijmenam - Poel 1", "Averbode - Poel 1")) %>%
   group_by(province, geschikt, select_expert_based) %>%
