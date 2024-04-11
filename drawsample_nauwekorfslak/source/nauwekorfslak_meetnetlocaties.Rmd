@@ -1,0 +1,62 @@
+---
+title: "Meetnetlocaties Nauwe korfslak"
+output:
+  bookdown::html_document2:
+    toc: TRUE
+    toc_depth: 2
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    number_sections: TRUE
+    code_folding: hide
+date: "2023-05-16"
+---
+
+
+```{r, message=FALSE}
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(conflicted)
+library(conflicted)
+
+conflicts_prefer(dplyr::filter)
+```
+
+
+```{r }
+steekproefkader_gridpunten <- read_sf(dsn = "../output/steekproefkader_nauwe_korfslak_2024-04-10.gpkg", layer = "steekproefkader_gridpunten")
+
+steekproefkader_gebieden <- read_sf(dsn = "../output/steekproefkader_nauwe_korfslak_2024-04-10.gpkg", layer = "steekproefkader_gebieden") 
+
+locaties_namen <- st_read(dsn = "../data/meetnet_nauwe_korfslak_namen_2024-04-10/meetnetlocaties_nauwekorfslak_2024-04-10.shp") %>%
+  st_drop_geometry() %>%
+  select(ranking, naam)
+```
+
+```{r}
+
+selectie_gridpunten <- steekproefkader_gridpunten %>%
+  filter(steekproef | reserve) %>%
+  st_drop_geometry() %>%
+  select(ranking, steekproef, reserve)
+
+selectie_locaties <- steekproefkader_gebieden %>%
+  inner_join(selectie_gridpunten, by = "ranking") %>%
+  left_join(locaties_namen, by = "ranking") %>%
+  st_transform(crs = 4326)
+
+selectie_locaties %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons(label = ~naam)
+```
+
+
+
+```{r}
+selectie_locaties %>%
+  st_write(dsn = "../output", layer = "meetnetlocaties_nauwekorfslak_2024-04-11", driver = "ESRI Shapefile", delete_dsn = TRUE)
+```
+
+
