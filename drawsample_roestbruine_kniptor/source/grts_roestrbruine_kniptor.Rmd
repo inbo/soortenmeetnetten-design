@@ -33,6 +33,7 @@ library(git2rdata)
 library(units)
 library(giscoR)
 library(DT)
+library(terra)
 
 conflicts_prefer(dplyr::filter())
 
@@ -68,6 +69,57 @@ Deze grts-ranking gebruiken we als basis voor de steekproeftrekking.
 grts_mgrs <- read_sf("../../data/grts_master_mgrs_flanders.gpkg", "cell_polygons", quiet = TRUE) %>%
   st_transform(crs = 31370)
 ```
+
+## Groenkaart Vlaanderen
+
+We maken gebruik van de [Groenkaart Vlaanderen 2021](https://download.vlaanderen.be/product/8025-groenkaart-vlaanderen-2021) om het aandeel Hoog groen in elk hok te berekenen.
+
+```{r, eval = FALSE}
+
+  # ncol_i <- ncol(groenkaart_i)
+  # nrow_i <- nrow(groenkaart_i)
+  # x_res <- (xmax(groenkaart_i) - xmin(groenkaart_i))/ncol_i
+  # y_res <- (ymax(groenkaart_i) - ymin(groenkaart_i))/nrow_i
+  # 
+
+# hoog groen = 1, de rest = 0
+ rclmat <- rbind(c(2, 0),
+                  c(3, 0),
+                  c(4, 0),
+                  c(5, NA))
+
+# read different files and merge them together
+
+for (i in 1:43) {
+  
+  groenkaart_i <- terra::rast(str_c("../../data/Groenkaart_Vlaanderen_2021/GeoTIFF/GRNKRT_",
+                             ifelse(i < 10, "0", ""), 
+                             i, 
+                             ".tif"))
+
+  groenkaart_i_rcl <- classify(groenkaart_i, rclmat)
+  
+  groenkaart_i_aggr <- aggregate(groenkaart_i_rcl, fact = 10, fun = "mean", na.rm = TRUE)
+  
+  if (i == 1) {
+    
+  groenkaart_vlaanderen <- groenkaart_i_aggr  
+    
+  } else {
+    
+    groenkaart_vlaanderen <- groenkaart_vlaanderen %>%
+    terra::merge(groenkaart_i_aggr)
+  }
+
+}
+
+terra::writeRaster(groenkaart_vlaanderen, "../../data/hooggroen_vl_2021_10m.tif")
+
+plot(groenkaart_vlaanderen)
+
+```
+
+
 
 ## Toegankelijkheid
 
@@ -189,6 +241,24 @@ mgrs_aantallen_summary <- aantallen_sf %>%
   ungroup()
 ```
 
+## Aandeel hoog groen per hok
+
+We bepalen de proportie 'hoog groen' in elk hok op basis van de [Groenkaart Vlaanderen uit 2021](https://download.vlaanderen.be/product/8025-groenkaart-vlaanderen-2021).
+
+```{r}
+
+hooggroen <- rast("../../data/hooggroen_vl_2021_10m.tif")
+
+grts_mgrs_aanwezig <- grts_mgrs %>%
+  semi_join(st_drop_geometry(aantallen_sf), by = "cellcode")
+
+mgrs_hooggroen <- grts_mgrs_aanwezig %>%
+  mutate(prop_hooggroen = (terra::extract(hooggroen, grts_mgrs_aanwezig, fun = "mean", na.rm = TRUE))$GRNKRT_01) %>%
+  st_drop_geometry() %>%
+  select(cellcode, prop_hooggroen)
+
+```
+
 ## Selectie van hokken in het steekproefkader
 
 Het steekproefkader bouwen we op door de informatie over toegankelijkheid en het aantal waargenomen individuen van Roestbruine kniptor aan elk mgrs hok te koppelen.
@@ -199,27 +269,12 @@ Verschillende scenario's zijn mogelijk:
 
 + We houden al dan niet rekening met het aantal waargenomen individuen per hok: alle hokken waar soort is waargenomen of bv. enkel die hokken waar minstens twee individuen werden waargenomen
 
-Hieornder de verdeling van het aantal individuen per hok.
-
 ```{r}
-mgrs_aantallen_summary %>%
-  st_drop_geometry() %>%
-  filter(aantal > 0) %>%
-  mutate(aantalsklasse = ifelse(aantal > 10, "> 10", 
-                                ifelse(aantal >= 5, "5 - 10", as.character(aantal))),
-         aantalsklasse = factor(aantalsklasse, levels = c("1", "2", "3", "4", "5 - 10", "> 10"))) %>%
-  ggplot(aes(x = aantalsklasse)) +
-  geom_bar() +
-  labs(x = "Aantal waargenomen individuen per hok", 
-       y = "Aantal hokken")
-```
-
-
-```{r}
-mgrs_steekproefkader_ruim <- grts_mgrs %>%
+mgrs_steekproefkader_ruim <- grts_mgrs_aanwezig %>%
   left_join(mgrs_anb_summary, by = "cellcode") %>%
   left_join(mgrs_enr_summary, by = "cellcode") %>%
   left_join(mgrs_aantallen_summary, by = "cellcode") %>%
+  left_join(mgrs_hooggroen, by = "cellcode") %>%
   mutate(anb_prop = ifelse(is.na(anb_prop), 0, anb_prop),
          enr_prop = ifelse(is.na(enr_prop), 0, enr_prop))
 
@@ -228,32 +283,67 @@ mgrs_steekproefkader_specifiek <- mgrs_steekproefkader_ruim %>%
   arrange(ranking) %>%
   mutate(ranking_rel = rank(ranking),
          toegankelijk = enr_prop + anb_prop > 0,
+         voldoende_bos = prop_hooggroen > 0.2,
          minstens2 = aantal >= 2) %>%
-  group_by(toegankelijk) %>%
-  mutate(ranking_toegankelijk_rel = rank(ranking)) %>%
+  group_by(toegankelijk, voldoende_bos) %>%
+  mutate(ranking_toegankelijk_bos_rel = rank(ranking)) %>%
   ungroup() %>%
-  group_by(minstens2) %>%
-  mutate(ranking_minstens2_rel = rank(ranking)) %>%
+  group_by(minstens2, voldoende_bos) %>%
+  mutate(ranking_minstens2_bos_rel = rank(ranking)) %>%
   ungroup() %>%
-  select(cellcode, ranking, ranking_rel, ranking_toegankelijk_rel, ranking_minstens2_rel, toegankelijk, aanwezig, aantal, jaar_min, jaar_max, bron,  everything()) %>%
+  group_by(voldoende_bos) %>%
+  mutate(ranking_bos_rel = rank(ranking)) %>%
+  ungroup() %>%
+  select(cellcode, ranking, ranking_rel, ranking_bos_rel, ranking_toegankelijk_bos_rel, ranking_minstens2_bos_rel, toegankelijk, aanwezig, aantal, jaar_min, jaar_max, bron,  everything()) %>%
   select(-level, -x1c, -x2c) %>%
-  mutate(meetnet_sc1 = toegankelijk & ranking_toegankelijk_rel <= 30,
-         meetnet_sc2 = ranking_rel <= 30,
-         meetnet_sc3 = minstens2 & ranking_minstens2_rel <= 30)
+  mutate(meetnet_sc1 = toegankelijk & voldoende_bos & ranking_toegankelijk_bos_rel <= 35,
+         meetnet_sc2 = voldoende_bos & ranking_bos_rel <= 35,
+         meetnet_sc3 = minstens2 & voldoende_bos & ranking_minstens2_bos_rel <= 35)
 ```
 
+Hieronder de verdeling van het aantal individuen per hok, met onderscheid tussen toegankelijke en ontoegankelijke hokken.
+
+```{r}
+mgrs_steekproefkader_specifiek %>%
+  st_drop_geometry() %>%
+  filter(aantal > 0) %>%
+  mutate(aantalsklasse = ifelse(aantal > 10, "> 10", 
+                                ifelse(aantal >= 5, "5 - 10", as.character(aantal))),
+         aantalsklasse = factor(aantalsklasse, levels = c("1", "2", "3", "4", "5 - 10", "> 10"))) %>%
+  ggplot(aes(x = aantalsklasse, fill = toegankelijk)) +
+  geom_bar() +
+  labs(x = "Aantal waargenomen individuen per hok", 
+       y = "Aantal hokken")
+```
+
+Hieronder de verdeling van het aantal individuen per hok, met onderscheid tussen toegankelijke en ontoegankelijke hokken.
+
+```{r}
+mgrs_steekproefkader_specifiek %>%
+  st_drop_geometry() %>%
+  filter(aantal > 0) %>%
+  mutate(aantalsklasse = ifelse(aantal > 10, "> 10", 
+                                ifelse(aantal >= 5, "5 - 10", as.character(aantal))),
+         aantalsklasse = factor(aantalsklasse, levels = c("1", "2", "3", "4", "5 - 10", "> 10"))) %>%
+  ggplot(aes(x = prop_hooggroen, fill = toegankelijk)) +
+  geom_histogram(binwidth = 0.1, ) +
+  labs(x = "Proportie hoog groen per hok", 
+       y = "Aantal hokken")
+```
 
 # Resultaat
 
-## Scenario 1: enkel toegankelijke hokken waar soort aanwezig is
+## Scenario 1: enkel toegankelijke hokken met minstens 20% hoog groen waar soort aanwezig is
 
-We selecteren de 30 hokken in het steekproefkader (enkel toegankelijke hokken waar soort aanwezig is) met de laagste grts-ranking.
+Het steekproefkader bestaat uit de toegankelijke hokken met minstens 20 % hoog groen waar de soort aanwezig is. 
+Hieruit selecteren we de 30 hokken + 5 reservehokken  met de laagste grts-ranking.
+
 
 In de kaart hieronder tonen we:
 
 + de geselecteerde hokken voor het meetnet (geel)
 + de overige hokken in het steekproefkader (oranje)
-+ de hokken waar de soort aanwezig is maar geen gebied in beheer van ANB en geen erkend natuurreservaat bevatten (rood)
++ de hokken waar de soort aanwezig is maar niet toegankelijk zijn of onvoldoende hoog groen bevatten (rood)
 + de puntlocaties waar de soort werd waargenomen (blauwe cirkels)
 + de ENR en ANB-domeinen die overlappen met hokken in het steekproefkader
 
@@ -280,9 +370,9 @@ anb_show <- anb_patrimonium %>%
   st_transform(4326)
 
 mgrs_steekproefkader_specifiek %>%
-  mutate(show_color = ifelse(!toegankelijk, "red",
+  mutate(show_color = ifelse(!(toegankelijk & voldoende_bos), "red",
                              ifelse(meetnet_sc1, "yellow", "orange")),
-         show_label = str_c(cellcode, " ranking = ", ranking_toegankelijk_rel, "; aantal = ", aantal)) %>%
+         show_label = str_c(cellcode, " ranking = ", ranking_toegankelijk_bos_rel, "; aantal = ", aantal)) %>%
   st_transform(crs = 4326) %>%
   leaflet() %>%
   addTiles() %>%
@@ -297,14 +387,16 @@ mgrs_steekproefkader_specifiek %>%
 ```
 
 
-## Scenario 2: alle hokken waar soort aanwezig is
+## Scenario 2: alle hokken waar soort aanwezig is met minstens 20 % hoog groen
 
-We selecteren de 30 hokken in het steekproefkader (waar soort aanwezig is) met de laagste grts-ranking.
+Het steekproefkader bestaat uit alle hokken met minstens 20 % hoog groen waar de soort aanwezig is. 
+Hieruit selecteren we de 30 hokken + 5 reservehokken  met de laagste grts-ranking.
 
 In de kaart hieronder tonen we:
 
 + de geselecteerde hokken voor het meetnet (geel)
 + de overige hokken in het steekproefkader (oranje)
++ de hokken waar de soort aanwezig is maar onvoldoende hoog groen bevatten (rood)
 + de puntlocaties waar de soort werd waargenomen (blauwe cirkels)
 + de ENR en ANB-domeinen die overlappen met hokken in het steekproefkader
 
@@ -312,8 +404,9 @@ In de kaart hieronder tonen we:
 ```{r}
 
 mgrs_steekproefkader_specifiek %>%
-  mutate(show_color = ifelse(meetnet_sc2, "yellow", "orange"),
-         show_label = str_c(cellcode, " ranking = ", ranking_rel, "; aantal = ", aantal)) %>%
+   mutate(show_color = ifelse(!voldoende_bos, "red",
+                             ifelse(meetnet_sc2, "yellow", "orange")),
+         show_label = str_c(cellcode, " ranking = ", ranking_bos_rel, "; aantal = ", aantal)) %>%
   st_transform(crs = 4326) %>%
   leaflet() %>%
   addTiles() %>%
@@ -327,15 +420,16 @@ mgrs_steekproefkader_specifiek %>%
   )
 ```
 
-## Scenario 3: alle hokken waar minstens 2 individuen werden waargenomen
+## Scenario 3: alle hokken waar minstens 2 individuen werden waargenomen met minstens 20 % hoog groen
 
-We selecteren de 30 hokken in het steekproefkader (waar minstens 2 individuen werden waargenomen) met de laagste grts-ranking.
+Het steekproefkader bestaat uit de toegankelijke hokken met minstens 20 % hoog groen waar er minstens 2 individuen werden waargenomen. 
+Hieruit selecteren we de 30 hokken + 5 reservehokken  met de laagste grts-ranking.
 
 In de kaart hieronder tonen we:
 
 + de geselecteerde hokken voor het meetnet (geel)
 + de overige hokken in het steekproefkader met minstens 2 individuen (oranje)
-+ de hokken met slechts 1 individu (rood)
++ de hokken met slechts 1 individu of onvoldoende hoog groen (rood)
 + de puntlocaties waar de soort werd waargenomen (blauwe cirkels)
 + de ENR en ANB-domeinen die overlappen met hokken in het steekproefkader
 
@@ -343,9 +437,9 @@ In de kaart hieronder tonen we:
 ```{r}
 
 mgrs_steekproefkader_specifiek %>%
-  mutate(show_color = ifelse(!minstens2, "red",
+  mutate(show_color = ifelse(!(minstens2 & voldoende_bos), "red",
                              ifelse(meetnet_sc3, "yellow", "orange")),
-         show_label = str_c(cellcode, " ranking = ", ranking_rel, "; aantal = ", aantal)) %>%
+         show_label = str_c(cellcode, " ranking = ", ranking_minstens2_bos_rel, "; aantal = ", aantal)) %>%
   st_transform(crs = 4326) %>%
   leaflet() %>%
   addTiles() %>%
@@ -372,7 +466,8 @@ belgium <- gisco_get_nuts(nuts_level = 2, country = "Belgium", resolution = "01"
 mgrs_steekproefkader_specifiek %>%
   st_join(belgium, largest = TRUE) %>%
   st_drop_geometry() %>%
-  select(provincie, locatie, cellcode, ranking, aantal, scenario_1 = meetnet_sc1, scenario_2 = meetnet_sc2, scenario_3 = meetnet_sc3, anb_prop, enr_prop) %>%
+  select(provincie, locatie, cellcode, ranking, aantal, scenario_1 = meetnet_sc1, scenario_2 = meetnet_sc2, scenario_3 = meetnet_sc3, anb_prop, enr_prop, prop_hooggroen) %>%
+  mutate(prop_hooggroen = round(prop_hooggroen, 2)) %>%
   arrange(provincie, ranking) %>%
   datatable(rownames = FALSE,
             filter = "top")
