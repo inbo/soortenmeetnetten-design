@@ -500,6 +500,46 @@ aantallen_sf %>%
   st_write("../output/steekproefkader_roestbruine_kniptor.gpkg", layer = "aantallen", driver = "gpkg", delete_layer = TRUE, quiet = TRUE)
 ```
 
+# Keuze scenario
+
+We kiezen scenario 2.
+we selecteren initieel 35 hokken omdat er mogelijks nog hokken wegvallen die niet toegankelijk zijn.
+
+```{r}
+
+locatie_meetnetten <- aantallen_sf %>%
+  st_drop_geometry() %>%
+  select(cellcode, locatie_in_meetnetten) %>%
+  unique()
+
+scenario_2 <- mgrs_steekproefkader_specifiek %>%
+  filter(meetnet_sc2) %>%
+  select(bron, cellcode, locatie, enr_reservaat) %>%
+  left_join(locatie_meetnetten, by = c("cellcode"))
+```
+
+Volgende locaties zitten al in meetnetten.be (als onderdeel van de inhaalslag) en moeten geactiveerd worden.
+
+```{r}
+scenario_2 %>%
+  st_drop_geometry() %>%
+  filter(locatie_in_meetnetten) %>%
+  select(locatie, cellcode) %>%
+  datatable(rownames = FALSE)
+```
+
+
+```{r, eval = FALSE}
+scenario_2_nieuw <- scenario_2 %>%
+  filter(!locatie_in_meetnetten) %>%
+  filter(!str_detect(bron, "meetnetten")) %>%
+  mutate(naam = locatie) %>%
+  st_transform(crs = 4326)
+
+scenario_2_nieuw %>%
+  st_write("../output/roestbruine_kniptor_add.shp")
+```
+
 # Verspreidingskaart
 
 ```{r}
