@@ -485,7 +485,7 @@ Aan deze geopackage voegen we ook volgende layers toe:
 + ENR
 + waarnemingen uit meetnetten.be en waarnemingen.be (inclusief nulwaarnemingen)
 
-```{r}
+```{r, eval = FALSE}
 st_write(mgrs_steekproefkader_specifiek, "../output/steekproefkader_roestbruine_kniptor.gpkg", layer = "mgrs_steekproefkader", driver = "gpkg", delete_layer = TRUE, delete_dsn = TRUE, quiet = TRUE)
 
 enr %>%
@@ -509,13 +509,17 @@ we selecteren initieel 35 hokken omdat er mogelijks nog hokken wegvallen die nie
 
 locatie_meetnetten <- aantallen_sf %>%
   st_drop_geometry() %>%
-  select(cellcode, locatie_in_meetnetten) %>%
+  group_by(cellcode, locatie_in_meetnetten) %>%
+  summarise(aantal = sum(aantal),
+            jaar = max(jaar)) %>%
+  ungroup() %>%
   unique()
 
 scenario_2 <- mgrs_steekproefkader_specifiek %>%
   filter(meetnet_sc2) %>%
   select(bron, cellcode, locatie, enr_reservaat) %>%
-  left_join(locatie_meetnetten, by = c("cellcode"))
+  left_join(locatie_meetnetten, by = c("cellcode")) %>%
+  mutate(jaar_meetnet = pmax(2024, jaar + 3))
 ```
 
 Volgende locaties zitten al in meetnetten.be (als onderdeel van de inhaalslag) en moeten geactiveerd worden.
@@ -524,7 +528,7 @@ Volgende locaties zitten al in meetnetten.be (als onderdeel van de inhaalslag) e
 scenario_2 %>%
   st_drop_geometry() %>%
   filter(locatie_in_meetnetten) %>%
-  select(locatie, cellcode) %>%
+  select(locatie, cellcode, aantal, jaar, jaar_meetnet) %>%
   datatable(rownames = FALSE)
 ```
 
