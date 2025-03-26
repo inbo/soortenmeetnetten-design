@@ -1,0 +1,270 @@
+---
+title: "Steekproefkader Boomkikker"
+date: '2025-03-26'
+output:
+  bookdown::html_document2:
+    keep_md: TRUE
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(n2khab)
+library(units)
+library(kableExtra)
+library(terra)
+library(DT)
+library(crosstalk)
+
+options(knitr.kable.NA = '')
+
+source(file.path(fileman_up("soortenmeetnetten-analysis"), "source/functions_smp.R"))
+```
+
+
+# Data
+
+## Origineel steekproefkader
+
+Volgende bestand bevat de originele grts-ranking van de punten (poelen) waarop de steekproeftrekking gebaseerd is:
+
++ `Boomkikker_Lambert1972_Steekproefkader_versie2016-07-19`
+
+```{r}
+steekproefkader_boomkikker_orig <- st_read("../data/Boomkikker_Lambert1972_Steekproefkader_versie2016-07-19.shp", crs = 31370, quiet = TRUE) 
+
+steekproefkader_boomkikker_old <- steekproefkader_boomkikker_orig %>%
+  select(meetnet = Meetnet, locatie_v1 = Naam, ranking_v1 = GRTSRnk, steekproef_v1 = Steekproef, steekproefkader_v1 = SPKader) %>%
+  mutate(steekproef_v1 = steekproef_v1 == 1,
+         steekproefkader_v1 = steekproefkader_v1 == 1)
+
+steekproefkader_boomkikker_old_buffer <- steekproefkader_boomkikker_old %>%
+  select(-meetnet) %>%
+  st_buffer(dist = 10)
+```
+
+## Locaties meetnetten.be
+
+```{r}
+locaties_boomkikker <- get_locations_smp(only_active = FALSE) %>%
+  filter(meetnet == "Boomkikker")
+```
+
+
+Meetnetten.be bevat 106 locaties.
+Het originele steekproefkader bestaat uit 80 locaties
+
+Opmerking: 
+
++ Dautewijers 1 uit origineel steekproefkader is dezelfde plas als Dauteweyers - Poel 11 uit huidig steekproefkader in meetnetten.be.
++ 1 locatie uit origineel steekproefkader zit niet in meetnetten.be: Zwin - Kleine vlakte 11
+
+```{r, eval = FALSE}
+locaties_boomkikker %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(label = ~locatie, radius = 20) %>%
+  addCircleMarkers(data = st_transform(steekproefkader_boomkikker_old, crs = 4326), label =~locatie_v1, color = "yellow")
+```
+
+## Aantallen meetnetten.be
+
+```{r}
+aantal_boomkikker <- get_counts_smp() %>%
+  filter(meetnet == "Boomkikker")
+
+max_aantal_recent <- aantal_boomkikker %>%
+  filter(primaire_soort) %>%
+  filter(levensstadium %in% c("adult", "Larva")) %>%
+  mutate(levensstadium = ifelse(levensstadium == "Larva", "larve", levensstadium)) %>%
+  filter(jaar >= 2019) %>%
+  group_by(locatie, levensstadium, jaar) %>%
+  summarise(max_aantal_geteld = max(aantal),) %>%
+  ungroup() %>%
+  group_by(locatie, levensstadium) %>%
+  filter(max_aantal_geteld == max(max_aantal_geteld)) %>%
+  filter(jaar == max(jaar)) %>% #indien dezelfde aantallen in verschillende jaren
+  ungroup() %>%
+  pivot_wider(names_from = levensstadium,
+              values_from = c(max_aantal_geteld, jaar))
+```
+
+
+
+# Vergelijking huidig en origneel steekproefkader
+
+Onderstaande kaart en tabel geeft de status van de locaties in meetnetten.be:
+
++ huidige steekproeflocaties: groene cirkels
++ huidige locaties in steekproefkader maar niet in steekproef: blauwe cirkels
++ locatie niet in steekproefkader: rode cirkels
+
+Via de selectievensters kunnen locaties geselecteerd worden.
+Deze selectie is van toepassing op zowel de kaart als de tabel.
+
+In de tabel tonen we ook het maximum geteld aantal adulten en larven sinds 2019.
+
+```{r map}
+locaties_boomkikker_compare <- locaties_boomkikker %>%
+  st_transform(31370) %>%
+  select(meetnet, locatie, is_sample, is_active, created, updated) %>%
+  st_join(steekproefkader_boomkikker_old_buffer) %>%
+  # Dautewijers 1 uit origineel steekproefkader is dezelfde plas als Dauteweyers - Poel 11 uit huidig steekproefkader
+  mutate(ranking_v1 = ifelse(locatie == "Dauteweyers - Poel 11", 182, ranking_v1),
+         steekproef_v1 = ifelse(locatie == "Dauteweyers - Poel 11", TRUE, steekproef_v1),
+         steekproefkader_v1 = ifelse(locatie == "Dauteweyers - Poel 11", TRUE, steekproefkader_v1),
+         locatie_v1 = ifelse(locatie == "Dauteweyers - Poel 11", "Dautewijers 1", locatie_v1),
+         created = year(created),
+         updated = year(updated),
+         steekproef_v1 = ifelse(is.na(steekproef_v1), FALSE, steekproef_v1),
+         steekproefkader_v1 = ifelse(is.na(steekproefkader_v1), FALSE, steekproefkader_v1)) %>%
+  left_join(max_aantal_recent, by = "locatie")
+
+locaties_wijziging <- locaties_boomkikker_compare %>%
+  mutate(wijziging_steekproefkader = ifelse(is_active,
+                                            ifelse(steekproefkader_v1, "behouden", "toegevoegd"),
+                                            ifelse(steekproefkader_v1, "verwijderd", "toegevoegd en verwijderd")),
+         wijziging_steekproef = ifelse(is_sample,
+                                            ifelse(steekproef_v1, "behouden", "toegevoegd"),
+                                            ifelse(steekproef_v1, "verwijderd", "niet geselecteerd"))) %>%
+  rename(steekproef_huidig = is_sample, steekproefkader_huidig = is_active) %>%
+  mutate(status = ifelse(steekproef_huidig, "steekproef",
+                             ifelse(steekproefkader_huidig, "steekproefkader, niet in steekproef", "niet in steekproefkader")),
+         show_color = ifelse(steekproef_huidig, "green",
+                             ifelse(steekproefkader_huidig, "blue", "red"))) %>%
+  select(locatie, status, show_color, wijziging_steekproef, wijziging_steekproefkader, max_adult = max_aantal_geteld_adult, max_larve = max_aantal_geteld_larve) %>%
+  st_transform(4326)
+
+```
+
+```{r}
+shared_data <- SharedData$new(locaties_wijziging)
+
+bscols(widths = c(4,4,4),
+  filter_checkbox("status", "Status locatie", shared_data, ~status),
+  filter_checkbox("wijziging_steekproefkader", "Wijziging steekproefkader", shared_data, ~wijziging_steekproefkader),
+  filter_checkbox("wijziging_steekproef", "Wijziging steekproef", shared_data, ~wijziging_steekproef)
+)
+
+shared_data %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(label = ~locatie, color = ~show_color)
+
+shared_data %>%
+  datatable(rownames = FALSE,
+            filter = "top", 
+            options = list(columnDefs = list(list(visible = FALSE, targets= c( 2, 7))))
+  )
+```
+
+
+```{r}
+locaties_boomkikker_add <- steekproefkader_boomkikker_old %>%
+  filter(!locatie_v1 %in% locaties_boomkikker_compare$locatie_v1)
+```
+
+
+# Vernieuwing steekproef
+
+```{r}
+grts_master <- read_GRTSmh()
+
+locaties_boomkikker_grts <- locaties_boomkikker_compare %>%
+  mutate(grts_ranking = (terra::extract(grts_master, locaties_boomkikker_compare))$GRTSmaster_habitats) %>%
+  mutate(grts_ranking_draw = ifelse(is.na(ranking_v1), grts_ranking, ranking_v1),
+         grts_ranking_draw = ifelse(locatie %in% c("Dauteweyers - Poel 3", "Dauteweyers - Poel 5"),
+                                    1, grts_ranking_draw)) %>% # manueel geselecteerde locatie binnen cluster
+  filter(is_active) %>%
+  mutate(cluster = ifelse(str_detect(locatie, " - "), 
+                          str_sub(locatie,  end = str_locate(locatie, " - ")),
+                          locatie),
+         cluster = str_remove_all(cluster, str_c(as.character(c(0:9)), collapse = "|")),
+         cluster = str_remove(cluster, "NR"),
+         cluster = str_trim(cluster)) %>%
+  group_by(cluster) %>%
+  mutate(ranking_rel = rank(grts_ranking_draw),
+         n_poelen = n_distinct(locatie),
+         n_selectie_huidig = sum(is_sample), 
+         n_selectie_nieuw = ifelse(n_poelen < 5, n_poelen, max(4, ceiling(n_poelen/2)))) %>%
+  ungroup() %>%
+  mutate(steekproef_new = ranking_rel <= n_selectie_nieuw)
+
+```
+
+## Update steekproefkader
+
++ Zijn er nog locaties (met potentieel duurzame populaties) die toegevoegd moeten worden aan het steekproefkader?
+
++ Zijn er nog locaties die verwijderd moeten worden uit het steekproefkader?
+
+## Update steekproef
+
+In de oorspronkelijke steekproef werden alle locaties geselecteerd in kleine clusters (tot 7 poelen).
+In de grote grote clusters werd volgende selectie uitgevoerd:
+
++ in Zwin ‐ Kleine vlakte werden 10 van de 18 plassen geselecteerd,
++ in Vallei van de Itterbeek werden 11 van de 23 plassen geselecteerd.
+
+Sindsdien bevat het steekproefkader 3 extra grote clusters met meer dan 7 poelen.
+
+In onderstaande tabel tonen we:
+
++ het aantal poelen per cluster
++ het huidig aantal geselecteerde poelen per cluster
++ voorstel voor nieuw aantal te selecteren poelen per cluster
+
+```{r}
+locaties_boomkikker_grts %>%
+  distinct(cluster, n_poelen, n_selectie_huidig, n_selectie_nieuw) %>%
+  arrange(desc(n_poelen)) %>%
+  kable() %>%
+  kable_styling()
+```
+
+Volgende aanpassing in het meetnetontwerp kan er voor zorgen dat de steekproef beter is afgestemd op het huidige steekproefkader:
+
++ selecteer alle plassen in de kleinere clusters (< 5 plassen)
+
++ selecteer de helft (naar boven afgerond) en minstens 4 plassen in de grotere clusters (>= 5 plassen)
+
+De selectie binnen de grote clusters gebeurt op basis van de grts-ranking.
+De originele master GRTS (GRTS grid over heel Vlaanderen) is niet bewaard en kan dus niet gebruikt worden om een GRTS-ranking toe te kennen aan nieuwe punten in het steekproefkader.
+Daarom gebruiken we voor de locaties in het originele steekproefkader de originele (relatieve) grts-rankings.
+Voor de nieuwe locaties maken we gebruik van deze [GRTS master](https://zenodo.org/records/2682323).
+
+Dit resulteer in een steekproef van 61 plassen.
+Zie details in onderstaande tabel.
+
+```{r}
+locaties_boomkikker_grts %>%
+  st_drop_geometry() %>%
+  arrange(locatie) %>%
+  mutate(steekproef_wijziging = ifelse(steekproef_new,
+                                       ifelse(is_sample, "behouden", "toevoegen"),
+                                       ifelse(is_sample, "verwijderen", NA)),
+         steekproef_wijziging = factor(steekproef_wijziging, levels = c("toevoegen", "verwijderen", "behouden"))) %>%
+  filter(!is.na(steekproef_wijziging)) %>%
+  select(cluster, locatie, steekproef_wijziging) %>%
+  datatable(rownames = FALSE,
+            filter = "top")
+```
+
+We schrijven het resultaat weg als 'update_steekproef_boomkikker_2025-03-26.gpkg'.
+
+```{r eval = FALSE}
+locaties_boomkikker_grts %>%
+  st_write("../output/update_steekproef_boomkikker_2025-03-26.gpkg")
+```
+
+
+
+
