@@ -1,0 +1,128 @@
+---
+title: "Evaluatie steekproef heikikker"
+author: 
+  -
+    name: "Toon Westra, Jeroen Speybroeck, Loïc van Doorn, Sam Van De Poel,  Frederic Piesschaert, Thierry Onkelinx"
+    email: "Toon.Westra@inbo.be"
+subtitle: "Technisch rapport"
+link-citations: TRUE
+always_allow_html: yes
+site: bookdown::bookdown_site
+output:
+  bookdown::html_document2:
+    keep_md: TRUE
+    toc: TRUE
+    code_folding: hide
+    toc_depth: 2
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(sf)
+library(n2khab)
+```
+
+```{r}
+
+path_analysis <- fileman_up("soortenmeetnetten-analysis")
+
+source(file.path(path_analysis, "src/functions_smp.R"))
+```
+# Data meetnetten.be
+
+```{r}
+visits <- get_visits_smp() %>%
+  filter(meetnet == "Heikikker")
+
+path <- fileman_up("soortenmeetnetten-queries")
+
+covar <- get_covariates_smp() %>%
+  filter(meetnet == "Heikikker")
+
+counts <- get_counts_smp(species_group = "amfibieën") %>%
+  filter(meetnet == "Heikikker")
+
+locations <- get_locations_smp(only_active = FALSE) %>%
+  filter(locatie_type == "locatie")  %>%
+  filter(meetnet == "Heikikker")
+  
+locatie_clusters <- locations %>%
+  st_drop_geometry() %>%
+  select(meetnet, locatie, is_active, is_sample) %>%
+  mutate(cluster = ifelse(str_detect(locatie, " - "), 
+                          str_sub(locatie,  end = str_locate(locatie, " - ")),
+                          locatie),
+         cluster = str_remove_all(cluster, str_c(as.character(c(0:9)), collapse = "|")),
+         cluster = str_remove(cluster, "NR"),
+         cluster = str_trim(cluster),
+         poel =  str_extract(locatie, str_c(str_c("(n|[:space:])", c(1:35), "([:alpha:]|$)"), collapse = "|")),
+         poel = ifelse(cluster == "Merkske",  str_sub(locatie, start = str_locate(locatie, "B")[,"start"]),
+                       poel),
+         poel = ifelse(is.na(poel), "1", poel)) 
+
+```
+
+```{r}
+
+dataset_heikikker <-visits %>%
+  filter(meetnet == "Heikikker") %>%
+  left_join(select(covar, visit_id, bezoekvariabele, waarde), by = c("visit_id")) %>%
+  left_join(locatie_clusters, by = c("meetnet", "locatie")) %>%
+  left_join(select(counts, visit_id,  soort_nl, soort_wet, primaire_soort, levensstadium, aantal), by = "visit_id")
+
+analyseset_heikikker <- dataset_heikikker %>%
+  select(meetnet, protocol, locatie, cluster,  datum, visit_id, bezoek_status, hoofdteller, bezoekvariabele, waarde, aantal) %>%
+  pivot_wider(names_from = bezoekvariabele,
+              values_from = waarde) %>%
+  rename(aantal_totaal = "Aantal eiklompen totaal", aantal_bemonsterd = "Aantal eiklompen bemonsterd", aandeel_doelsoort = "Procentueel aandeel doelsoort", staalcode = Staalcode, aantal_doelsoort = aantal) %>%
+  mutate(jaar = year(datum),
+         aantal_bemonsterd = as.numeric(aantal_bemonsterd),
+         aantal_totaal = as.numeric(aantal_totaal),
+         aantal_doelsoort = ifelse(str_detect(bezoek_status, "Geen veldwerk mogelijk"), 0, aantal_doelsoort),
+         aantal_doelsoort = as.numeric(aantal_doelsoort),
+         aandeel_doelsoort = as.numeric(aandeel_doelsoort),
+         staalcode = ifelse(staalcode == "", NA, staalcode),
+         aantal_doelsoort = ifelse(!is.na(staalcode) & is.na(aandeel_doelsoort), NA, aantal_doelsoort),
+         staalname = !is.na(staalcode),
+         resultaat_ingevoerd = ifelse(staalname, !is.na(aandeel_doelsoort), NA)) %>%
+  arrange(datum) %>%
+  group_by(locatie) %>%
+  mutate(soort_aanwezig = any(aantal_doelsoort > 0)) %>%
+  ungroup() %>%
+  group_by(cluster) %>%
+  mutate(soort_aanwezig_cluster = any(aantal_doelsoort > 0)) %>%
+  ungroup()
+
+status_locaties_heikikker <- analyseset_heikikker %>%
+  group_by(cluster, locatie, soort_aanwezig, soort_aanwezig_cluster) %>%
+  summarise(aantal_doelsoort = sum(aantal_doelsoort),
+            jaar = str_c(unique(year(datum)), collapse = "; ")) %>%
+  ungroup()
+```
+```{r}
+status_locaties_heikikker <- locations %>%
+  select(meetnet, locatie, is_active, is_sample) %>%
+  left_join(status_locaties_heikikker, by = "locatie") %>%
+  mutate(soort_aanwezig = ifelse(!is_active, FALSE, soort_aanwezig)) %>%
+  arrange(jaar, locatie)
+
+status_locaties_heikikker <- status_locaties_heikikker %>%
+  st_drop_geometry() %>%
+  mutate(lat = st_coordinates(status_locaties_heikikker)[,2],
+         long = st_coordinates(status_locaties_heikikker)[,1])
+```
+
+```{r}
+analyseset_heikikker %>%
+  write_csv2("../output/heikikker_bezoeken_cyclus1.csv")
+
+status_locaties_heikikker %>%
+  write_csv2("../output/heikikker_status_locaties.csv")
+```
+
+
