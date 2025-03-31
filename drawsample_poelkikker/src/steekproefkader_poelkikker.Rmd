@@ -1,4 +1,59 @@
 ---
+title: "Steekproeftrekking Poelkikker"
+author: "Toon Westra, Thierry Onkelinx, Jeroen Speybroeck"
+site: bookdown::bookdown_site
+output:
+  bookdown::html_document2:
+    keep_md: TRUE
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+---
+
+
+
+<!--chapter:end:index.Rmd-->
+
+
+# Inleiding
+
+Placeholder
+
+
+## Eerste ruwe clustering
+### Buffer met afstand `r d.max` meter
+### Breng barrières in rekening
+## Clustering verfijnen
+### Gebieden opdelen in deelgebieden
+### Zoekzones uitbreiden
+
+<!--chapter:end:10_clustering_steekproefkader.Rmd-->
+
+
+# Overzicht van de steekproef
+
+Placeholder
+
+
+## Steekproeftrekking
+### Volgorde van zoekzones
+### Volgorde van steekproefelementen per zoekzone
+### Eigenlijke selectie van de steekproef
+### Procedure voor vervangen van steekproefelementen
+
+<!--chapter:end:20_drawsample.Rmd-->
+
+
+# Namen van poelen
+
+Placeholder
+
+
+
+<!--chapter:end:30_namenpoelen.Rmd-->
+
+---
 title: "Update meetnet Poelkikker"
 author: "Toon Westra en Jeroen Speybroeck"
 site: bookdown::bookdown_site
@@ -45,10 +100,9 @@ conflicted::conflicts_prefer(dplyr::filter)
 doel.crs <- "+init=epsg:31370"
 ```
 
-
 # Aanpassing meetnet Poelkikker
 
-Het meetnet Poelkikker bevat in meetnetten.be momenteel uit 67 actieve locaties.
+Het meetnet Poelkikker bestaat momenteel uit Meetnetten.be bevat 67 actieve locaties.
 Na evaluatie blijkt het protocol waarbij larven via DNA worden bemonsterd onvoldoende geschikt.
 In de plaatst daarvan kiezen we voor een protocol waarbij adulten worden gevangen om de verhouding tussen de verschillende gelijkaardige soorten vast te stellen.
 In functie van de haalbaarheid, willen we de steekproefgrootte beperken tot 30 locaties.
@@ -61,11 +115,7 @@ provinces <- read_admin_areas(dsn = "provinces") %>%
 
 # dit bestand bevat de originele ranking
 sampleframe_ranking_orig <- read_csv("../data/steekproeftrekking_poelkikker.csv") %>%
-  select(-geom)
-
-#foutje corrigeren
-sampleframe_ranking <- sampleframe_ranking_orig %>%
-  mutate(polygon_id = ifelse(polygon_id == "VBRSZI0428", "LIMTES0472", polygon_id))
+  select(-geom) 
 
 overview <- sampleframe_ranking_orig %>%
   group_by(stratum, selectelement) %>%
@@ -85,7 +135,7 @@ sample_elementen_ranking_buffer <- sample_elementen_ranking %>%
 path_data <- fileman_up("soortenmeetnetten-queries")
 
 # dit zijn de locaties die in meetnetten zitten
-locaties_poelkikker <- read_sf(file.path(path_data, "raw/meetnetten_locaties.gpkg"), "locaties") %>%
+locaties_poelkikker<- read_sf(file.path(path_data, "raw/meetnetten_locaties.gpkg"), "locaties") %>%
   filter(soortgroep == "amfibieën") %>%
   filter(meetnet %in% c("Poelkikker")) %>%
   st_transform(crs = 31370) %>%
@@ -94,38 +144,6 @@ locaties_poelkikker <- read_sf(file.path(path_data, "raw/meetnetten_locaties.gpk
   rename(polygon_id_nearest = polygon_id) %>%
   st_join(select(sample_elementen_ranking_buffer, polygon_id)) %>%
   st_join(provinces)
-
-# sommige punten in meetnetten zijn verschoven t.o.v orig steekproefkader of ontbreken
-
-locaties_poelkikker <- locaties_poelkikker %>%
-  mutate(polygon_id = ifelse(locatie %in% c("Stadswallen Damme oost - Poel 1", "Klein Schietveld - Poel 2"), polygon_id_nearest, polygon_id),
-         polygon_id = ifelse(locatie == "Tommelen - Poel 8", "LIMHAS0277", polygon_id),
-         volgorde_zoekzone = ifelse(locatie == "Tommelen - Poel 8", 34, volgorde_zoekzone),
-         volgorde_element = ifelse(locatie == "Tommelen - Poel 8", 2, volgorde_element),
-         zoekzone = ifelse(locatie == "Tommelen - Poel 8", "Z0004", zoekzone),
-         polygon_id = ifelse(locatie == "Heideveld-Bornebeek - Poel 1", "WVLBRN0002", polygon_id),
-         volgorde_zoekzone = ifelse(locatie == "Heideveld-Bornebeek - Poel 1", 66, volgorde_zoekzone),
-         volgorde_element = ifelse(locatie == "Heideveld-Bornebeek - Poel 1", 1, volgorde_element),
-         zoekzone = ifelse(locatie == "Heideveld-Bornebeek - Poel 1", "Z0029", zoekzone),)
-
-clusters_poelkikker <- locaties_poelkikker %>%
-  st_drop_geometry() %>%
-  mutate(cluster = ifelse(str_detect(locatie, "Poel"),
-                          str_sub(locatie, end = str_locate(locatie, " - Poel")[,"start"] - 1),
-                          locatie)) %>%
-  distinct(zoekzone, cluster) %>%
-  filter(!is.na(zoekzone))
-  
-# dit zijn locaties in clusters die in meetnetten.be zitten
-
-locaties_poelkikker_cluster <- sample_elementen_ranking %>%
-  filter(zoekzone %in% locaties_poelkikker$zoekzone) %>%
-  filter(!(polygon_id %in% locaties_poelkikker$polygon_id)) %>%
-  filter(!is.na(zoekzone)) %>%
-  left_join(clusters_poelkikker, by = "zoekzone") %>%
-  st_join(provinces) %>%
-  mutate(meetnetten = FALSE,
-         locatie = str_c(cluster, " - ", polygon_id))
 ```
 
 # Nieuwe steekproef
@@ -163,38 +181,9 @@ aantallen_poelkikker_dna <- aantallen_poelkikker %>%
   left_join(covar_poelkikker_wide, by = "visit_id") %>%
   mutate(aantal = ifelse(is.na(aantal_larven_totaal), NA, aantal))
 
-aantallen_poelkikker_roepkoren <- aantallen_poelkikker %>%
-  filter(protocol == "Padden en kikkers - Roepkoren") %>%
-  group_by(meetnet, protocol, locatie, soort_nl) %>%
-  summarise(aantal = sum(aantal)) %>%
-  ungroup()
-
-if (!("ANTKAL0330" %in% locaties_poelkikker$polygon_id)) {
-  
-  add_locatie <- locaties_poelkikker_cluster %>%
-  filter(polygon_id == "ANTKAL0330") %>%
-  mutate(locatie = str_c(cluster, " - Poel 1"),
-         is_active = TRUE)
-
-  # add_locatie %>%
-  #   st_transform(4326) %>%
-  #   select(name = locatie) %>%
-  #   st_write("../output", "add_locatie_poelkikker", driver = "ESRI Shapefile")
-  
-}
-
 locaties_poelkikker <- locaties_poelkikker %>%
-  left_join(clusters_poelkikker, by = "zoekzone", ) %>%
-  bind_rows(add_locatie) %>% 
-  mutate(meetnetten = TRUE) %>%
-  select(province, cluster, locatie, meetnetten, is_active, polygon_id_nearest, polygon_id, zoekzone, volgorde_zoekzone, volgorde_element) %>%
-  left_join(aantallen_poelkikker_dna, by = c("locatie")) 
-
-extra_locaties_poelkikker_cluster <- locaties_poelkikker_cluster %>%
-  filter(polygon_id != "ANTKAL0330") %>%
-  mutate(select = "reserve",
-         geschikt = TRUE) %>%
-  select(province, cluster, locatie, meetnetten, geschikt, polygon_id, zoekzone, volgorde_zoekzone, volgorde_element, select)
+  select(province, locatie, is_active, polygon_id_nearest, polygon_id, zoekzone, volgorde_zoekzone, volgorde_element) %>%
+  left_join(aantallen_poelkikker_dna, by = c("locatie"))
 ```
 
 
@@ -206,7 +195,7 @@ samplesize_poelkikker <- tibble(province = c("West-Vlaanderen", "Antwerpen", "Li
 locaties_poelkikker_steekproef <- locaties_poelkikker %>%
   left_join(samplesize_poelkikker, by = "province") %>%
   mutate(geschikt = aantal > 0 | is.na(aantal),
-         geschikt = ifelse(locatie %in% c("Vloethemveld - Poel 1", "Heitegemstraat - Poel 1", "Kalmthoutse Heide oost - Poel 2", "Kalmthoutse Heide zuid - Poel 1"), FALSE, geschikt)) %>%
+         geschikt = ifelse(locatie == "Vloethemveld - Poel 1", FALSE, geschikt)) %>%
   filter(is_active) %>%
   mutate(select_expert_based = locatie %in% c("Rijmenam - Poel 1", "Averbode - Poel 1")) %>%
   group_by(province, geschikt, select_expert_based) %>%
@@ -220,18 +209,13 @@ locaties_poelkikker_steekproef <- locaties_poelkikker %>%
 ```{r}
 poelkikker_steekproef <- locaties_poelkikker_steekproef %>%
   mutate(select = ifelse(select, "steekproef", "reserve")) %>%
-  bind_rows(extra_locaties_poelkikker_cluster) %>%
-  select(provincie = province, locatie, geschikt, meetnetten, selectie = select, volgorde_cluster = volgorde_zoekzone, volgorde_element, aantal, aantal_larven_totaal, aandeel_larven_poelkikker, datum_dna_cyclus1 = datum)
+  select(provincie = province, locatie, geschikt, selectie = select, volgorde_cluster = volgorde_zoekzone, volgorde_element, aantal, aantal_larven_totaal, aandeel_larven_poelkikker, datum_dna_cyclus1 = datum)
 
 poelkikker_steekproef_tabel <- poelkikker_steekproef %>%
   st_drop_geometry() %>%
   mutate(x = st_coordinates(poelkikker_steekproef)[,1],
          y = st_coordinates(poelkikker_steekproef)[,2]) %>%
   arrange(provincie, volgorde_cluster, volgorde_element)
-
-check <- poelkikker_steekproef_tabel %>%
-  group_by(volgorde_cluster, volgorde_element) %>%
-  filter(n() > 1)
 
 write_csv2(poelkikker_steekproef_tabel, "../output/poelkikker_steekproef_2024-2026.csv")
 ```
@@ -242,16 +226,13 @@ locaties_show <- poelkikker_steekproef %>%
                          ifelse(selectie == "steekproef", "Steekproef", "Reserve")),
          show_color = ifelse(status == "Poelkikker afwezig", "red",
                              ifelse(status == "Steekproef", "yellow", "blue"))) %>%
-  select(provincie, locatie, meetnetten, status, volgorde_cluster, volgorde_element, aantal, aandeel_larven_poelkikker, aandeel_larven_poelkikker, show_color) %>% 
+  select(provincie, locatie, status, volgorde_cluster, volgorde_element, aantal, aandeel_larven_poelkikker, aandeel_larven_poelkikker, show_color) %>% 
   arrange(provincie, volgorde_cluster, volgorde_element) %>%
   st_transform(4326)
 
 sd <- SharedData$new(locaties_show)
 
-bscols(widths = c(6, 6),
-       filter_select(id = "status", label = "Status poel", sd, ~status),
-       filter_select(id = "meetnet", label = "Locatie in meetnetten.be", sd, ~ifelse(meetnetten, "Ja", "Nee"))
-)
+filter_select(id = "status", label = "Status poel", sd, ~status)
 
 sd %>%
   leaflet() %>%
@@ -261,6 +242,9 @@ sd %>%
 sd %>%
   datatable(rownames = FALSE,
             filter = "top",
-             options = list(columnDefs = list(list(visible=FALSE, targets= c(8, 9)))))
+             options = list(columnDefs = list(list(visible=FALSE, targets= c(7, 8)))))
 ```
+
+
+<!--chapter:end:reproduce_sample.Rmd-->
 

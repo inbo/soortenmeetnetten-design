@@ -1,0 +1,129 @@
+---
+title: "Testdag meetnet Nauwe korfslak"
+output:
+  bookdown::html_document2:
+    toc: TRUE
+    toc_depth: 2
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    number_sections: TRUE
+    code_folding: hide
+date: "2023-05-16"
+---
+
+
+```{r, message=FALSE}
+#remotes::install_github("hrbrmstr/mgrs")
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(conflicted)
+library(n2khab)
+library(git2rdata)
+library(units)
+library(giscoR)
+library(kableExtra)
+library(conflicted)
+library(leaflet.extras)
+library(leaflet.extras2)
+
+conflicts_prefer(dplyr::filter)
+```
+
+
+```{r }
+steekproefkader_gridpunten <- read_sf(dsn = "../output/steekproefkader_nauwe_korfslak.gpkg", layer = "steekproefkader_gridpunten")
+
+steekproefkader_gebieden <- read_sf(dsn = "../output/steekproefkader_nauwe_korfslak.gpkg", layer = "steekproefkader_gebieden") 
+
+leefgebied <- read_sf(dsn = "../output/steekproefkader_nauwe_korfslak.gpkg", layer = "leefgebied") 
+
+aantallen_nauwekorfslak <- read_sf(dsn = "../output/steekproefkader_nauwe_korfslak.gpkg", layer = "aantallen_nauwekorfslak") 
+
+
+
+```
+
+```{r}
+ranking_select <- c(1861, 3909, 13237, 949, 2805)
+
+selectie_gridpunten <- steekproefkader_gridpunten %>%
+  filter(ranking %in% ranking_select) 
+
+selectie_gridpunten_buffer50 <- selectie_gridpunten %>%
+  st_buffer(dist = 50)
+
+selectie_gridpunten_buffer10000 <- selectie_gridpunten %>%
+  st_buffer(dist = 10000) %>%
+  select(ranking)
+
+aantallen_nauwekorfslak_buffer <- aantallen_nauwekorfslak %>%
+  st_join(selectie_gridpunten_buffer10000)  %>%
+  filter(!is.na(ranking)) %>%
+  mutate(beschrijving = str_c(jaar, ": " ,aantal, " ", kleed)) %>%
+  select(beschrijving)
+
+selectie_gebieden <- steekproefkader_gebieden %>%
+  filter(ranking %in% ranking_select)
+
+selectie_gridpunten %>%
+  st_transform(4326) %>%
+  select(ranking, n2000_rbb_code_leefgebied) %>%
+  st_write(dsn = "../output/meetnet_nauwe_korfslak_punten.kml",  driver = "KML")
+
+selectie_gebieden %>%
+  st_transform(4326) %>%
+  select(ranking) %>%
+  st_write(dsn = "../output/meetnet_nauwe_korfslak_gebieden.kml",  driver = "KML")
+
+selectie_gridpunten_buffer50 %>%
+  st_transform(4326) %>%
+  select(ranking) %>%
+  st_write(dsn = "../output/buffer_50m.kml",  driver = "KML")
+
+aantallen_nauwekorfslak_buffer %>%
+  st_transform(4326) %>%
+  select(beschrijving) %>%
+  st_write(dsn = "../output/waarnemingen_nauwe_korfslak.kml",  driver = "KML")
+```
+
+
+```{r}
+
+map <- selectie_gridpunten %>%
+  select(ranking) %>%
+  st_transform(crs = 4326) %>%
+  leaflet() %>%
+  addTiles(group = "OSM") %>%
+  addProviderTiles(providers$Esri.WorldImagery, group = "Satelliet") %>%
+  addMarkers(group = "Girdpunten", label = ~ranking) %>%
+  addPolygons(data = st_transform(selectie_gebieden, crs = 4326), group = "Gebieden") %>%
+  addPolygons(data = st_transform(selectie_gridpunten_buffer50, crs = 4326), fillOpacity = 0, color = "black",dashArray = 3, weight = 2, group = "Buffer 50 meter") %>%
+   addLayersControl(baseGroups = c("OSM", "Satelliet"),
+                   overlayGroups = c("Gridpunten", "Gebieden", "Buffer 50 meter"),
+                   options = layersControlOptions(collapsed = FALSE)) %>%
+  addSearchFeatures(
+    targetGroups = "Girdpunten", # group should match addMarkers() group
+    options = searchFeaturesOptions(
+      zoom = 15, openPopup = TRUE, firstTipSubmit = TRUE,
+      autoCollapse = TRUE, hideMarkerOnCollapse = TRUE
+    )) %>%
+  addResetMapButton() %>%
+  addLayersControl(baseGroups = c("OSM", "Satelliet"),
+                   overlayGroups = c("Gridpunten", "Gebieden"),
+                   options = layersControlOptions(collapsed = FALSE))  %>%
+  # addEasyButton(easyButton(
+  #   icon = "fa-crosshairs", title = "Locate Me",
+  #   onClick = JS("function(btn, map){ map.locate({setView: true}); }"))) %>%
+  addFullscreenControl() %>%
+  addEasyprint() %>%
+  addControlGPS(options = gpsOptions(position = "topleft", activate = TRUE, 
+                                               autoCenter = TRUE, maxZoom = 14, 
+                                               setView = TRUE))
+  
+activateGPS(map)
+```
+
+
+

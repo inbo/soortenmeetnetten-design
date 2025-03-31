@@ -16,7 +16,7 @@ library(kableExtra)
 
 options(knitr.kable.NA = '')
 
-source(file.path(fileman_up("soortenmeetnetten-analysis"), "src/functions_smp.R"))
+source(file.path(fileman_up("soortenmeetnetten-analysis"), "source/functions_smp.R"))
 ```
 
 # Inleiding

@@ -1,0 +1,125 @@
+---
+title: "Steekproef argusvlinder"
+author: "Toon Westra"
+date: "2025-03-31"
+output:
+  html_document:
+    keep_md: TRUE
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(
+  cache = FALSE,
+  autodep = TRUE,
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+```{r settings, cache = FALSE}
+
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(n2khab)
+library(DT)
+library(crosstalk)
+conflicted::conflicts_prefer(dplyr::filter)
+source(file.path(fileman_up("soortenmeetnetten-analysis"), "source/functions_smp.R"))
+```
+
+
+# Data
+
+
+## Origineel steekproefkader
+
+Volgende bestand bevat de originele (relatieve) grts-ranking van de locaties waarop de steekproeftrekking gebaseerd is:
+
++ `Argusvlinder_steekpoefkader_WGS84_versie2019-02-25`
+
+```{r}
+steekproefkader_argusvlinder_orig <- st_read("../../data/Argusvlinder_steekpoefkader_WGS84_versie2019-02-25/Argusvlinder_steekpoefkader_WGS84_versie2019-02-25.shp", quiet = TRUE) 
+
+```
+
+## Locaties meetnetten.be
+
+In meetnetten.be zitten de steekproeflocaties (n = 27) en een aantal locaties die op inactief zijn gezet omdat de soort er niet (meer) voorkomt.
+
+```{r}
+locaties_argusvlinder <- get_locations_smp(only_active = FALSE) %>%
+  filter(meetnet == "Argusvlinder") 
+
+locaties_argusvlinder <- locaties_argusvlinder %>%
+  filter(locatie_type == "locatie") %>%
+  select(meetnet, locatie_mn = locatie, is_sample, is_active)
+```
+
+# Overzicht steekproef en steekproefkader
+
+Onderstaande kaart geeft een overzicht van de status per locatie in het meetnet argusvlinder:
+
++ locatie in huidige steekproef (gele polygonen)
++ niet geschikte locaties (rode polygonen)
++ vervanglocaties: potentieel geschikte locaties uit het steekproefkader, die nog niet in de steekproef zitten (blauwe polygonen) 
+
+```{r}
+steekproefkader_argusvlinder <- steekproefkader_argusvlinder_orig %>%
+  st_join(locaties_argusvlinder)
+
+streekproefkader_status <- steekproefkader_argusvlinder %>%
+  mutate(status = ifelse(is.na(is_sample), "vervanglocatie",
+                         ifelse(is_sample, "huidige steekproef", "niet geschikt"))) %>%
+  mutate(status = ifelse(Naam == "Achterhaven-Zeebrugge", "niet geschikt", status)) %>%
+  select(meetnet = Meetnet, locatie = Naam, is_sample, is_active, status, stratum = Stratum, ranking_rel = GRTSRnk) %>%
+  mutate(show_color = ifelse(status == "huidige steekproef", "yellow",
+                              ifelse(status == "niet geschikt", "red", "blue"))) %>%
+  arrange(ranking_rel)
+```
+
+```{r}
+
+streekproefkader_status %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons(label = ~locatie, color = ~show_color)
+  
+```
+
+```{r}
+grts_master <- read_GRTSmh()
+
+streekproefkader_punt <- streekproefkader_status %>%
+  select(locatie) %>%
+  st_point_on_surface() 
+
+streekproefkader_punt <- streekproefkader_punt %>%
+  mutate(grts_ranking_new = (terra::extract(grts_master, streekproefkader_punt))$GRTSmaster_habitats) %>%
+  st_drop_geometry()
+  
+streekproefkader_status <- streekproefkader_status %>%
+  left_join(streekproefkader_punt, by = "locatie")
+```
+
+Onderstaande tabel geeft een overzicht van de vervanglocaties.
+
+De oorspronkelijke relatieve grts-ranking is niet meer te reproduceren.
+We maken daarom een nieuwe absolute grts-ranking aan per locatie op basis van deze [GRTS master](https://zenodo.org/records/2682323) en rangschikken de locaties volgens deze nieuwe ranking.
+
+```{r}
+streekproefkader_status %>%
+  st_drop_geometry() %>%
+  filter(status == "vervanglocatie") %>%
+  select(meetnet, locatie, stratum, grts_ranking_new) %>%
+  arrange(grts_ranking_new) %>%
+  datatable(rownames = FALSE,
+            filter = "top")
+```
+
