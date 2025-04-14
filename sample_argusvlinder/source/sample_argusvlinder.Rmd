@@ -64,6 +64,8 @@ locaties_argusvlinder <- locaties_argusvlinder %>%
 
 # Overzicht steekproef en steekproefkader
 
+## Origineel steekproefkader
+
 Onderstaande kaart geeft een overzicht van de status per locatie in het meetnet argusvlinder:
 
 + locatie in huidige steekproef (gele polygonen)
@@ -122,4 +124,64 @@ streekproefkader_status %>%
   datatable(rownames = FALSE,
             filter = "top")
 ```
+## Controle vervanglocaties
+
+Van de 12 vervanglocaties zijn er twee waar er de voorbije drie jaar nog Argusvlinders gezien is:
+
++ Lissewege-Oost: op deze locatie worden nog jaarlijks Argusvlinders gezien. We voegen deze locatie toe aan het meetnet.
+
++ Fonteintjes: ook hier jaarlijks waarnemingen, maar wel zeer weinig. Dit gaat over 1 vlinder per voorjaar en de locatie heeft een zeer hoge waarnemerdensiteit. We voegen deze locatie toe aan het meetnet.
+
+```{r}
+locatie_lissewege_oost <- streekproefkader_status %>%
+  filter(locatie == "LissewegeOost") %>%
+  rename(geom = geometry) %>%
+  mutate(locatie = "Lissewege oost")
+  
+```
+
+
+## Nieuwe locaties
+
+```{r}
+locatie_vroenhoven <- get_locations_smp(only_active = FALSE) %>%
+  filter(locatie == "Vroenhoven",
+         meetnet == "Bruin dikkopje") %>%
+  select(locatie)
+```
+
+```{r}
+locaties_nieuw <- st_read("../data/argusvlinder_nieuw.shp")
+
+locaties_add <- locaties_nieuw %>%
+  mutate(locatie = ifelse(locatie == "Westhoek - Noord", "Westhoek noord", locatie)) %>%
+  rename(geom = geometry) %>%
+  bind_rows(locatie_vroenhoven) %>%
+  bind_rows(locatie_lissewege_oost) %>%
+  select(locatie) %>%
+  rename(naam = locatie)
+```
+
+Op basis van recente waarnemingen voegen we 3 bijkomende nieuwe locaties toe aan het meetnet:
+
++ Vroenhoven
++ Veurne - De Moeren
++ Westhoek noord
+
+Volgende kaart toont de toegevoegde locaties.
+
+```{r}
+
+locaties_add %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons(label = ~naam)
+
+```
+
+# Nieuwe selectie meetnetlocaties
+
+In totaal hebben we nu 31 meetnetlocaties.
+Een steekproeftrekking is dus niet meer aan de orde.
+
 
