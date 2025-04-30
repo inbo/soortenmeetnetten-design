@@ -2,9 +2,8 @@
 # Data gewest inladen en omzetten naar lijnen
 
 ```{r gemeente_laden, results='hide'}
-gewest <- read_sf("../data/Shapefile/Refgew.shp") %>%
-  st_transform(CRS(doel.crs)) %>%
-  select(naam = NAAM)
+gewest <- read_admin_areas(dsn = "flanders") %>%
+  rename(gewest_name = name)
 
 box_gewest <- gEnvelope(as_Spatial(gewest)) %>%
   st_as_sf() %>%
@@ -29,10 +28,10 @@ gewest.lijn <- gewest %>%
 
 ```{r barrieresvl, results='hide'}
 
-  railway <- read_sf("../data/osm/gis.osm_railways_free_1.shp") %>%
-    st_transform(CRS(doel.crs)) %>%
+  railway <- read_sf("../../data/osm/gis_osm_railways_free_1.shp") %>%
+    st_transform(31370) %>%
     st_join(gewest) %>%
-    filter(!is.na(naam))
+    filter(!is.na(gewest_name))
   
   spoorweg <- railway %>%
     filter(fclass == "rail") %>%
@@ -44,10 +43,10 @@ gewest.lijn <- gewest %>%
     mutate(barriere = "spoorweg") %>%
     select(barriere)
   
-  waterway <- read_sf("../data/osm/gis.osm_waterways_free_1.shp") %>%
-    st_transform(CRS(doel.crs)) %>%
+  waterway <- read_sf("../../data/osm/gis_osm_waterways_free_1.shp") %>%
+    st_transform(31370) %>%
     st_join(gewest) %>%
-    filter(!is.na(naam))
+    filter(!is.na(gewest_name))
   
   waterweg <- waterway %>%
     filter(fclass  %in% c("river", "canal")) %>%
@@ -59,8 +58,10 @@ gewest.lijn <- gewest %>%
     mutate(barriere = "waterweg") %>%
     select(barriere)
   
-  roads <- read_sf("../data/osm/gis.osm_roads_free_1.shp") %>%
-    st_transform(CRS(doel.crs)) %>%
+  roads <- read_sf("../../data/osm/gis_osm_roads_free_1.shp") %>%
+    st_transform(31370) 
+  
+  roads <- roads %>%
     st_join(box_gewest) %>%
     filter(!is.na(box))
   
@@ -74,7 +75,7 @@ gewest.lijn <- gewest %>%
                         ifelse(fclass == "trunk", "expressweg",
                                ifelse(fclass == "primary", "hoofdweg",
                                       ifelse(fclass == "secondary", "secundaire weg", NA))))) %>%
-    select(barriere)
+    select(barriere, fclass)
         
   
   weg.lokaal <- roads %>%
@@ -83,7 +84,7 @@ gewest.lijn <- gewest %>%
                         ifelse(fclass %in% c(
                           "motorway", "motorway_link", "motorway_junction", "trunk", "trunk_link", 
                           "primary", "primary_link", "secondary", "secondary_link"), "verbindingsweg", "pad"))) %>%
-    select(barriere)
+    select(barriere, fclass)
 
 ```
 
@@ -94,7 +95,7 @@ gewest.lijn <- gewest %>%
   barriere_vl <- bind_rows(spoorweg, waterweg, weg)
   barriere_lokaal_vl <- bind_rows(spoorweg.lokaal, waterweg.lokaal, weg.lokaal)
   
-  st_write(barriere_vl, dsn = "../data/barriere_vl.gpkg", layer = "barriere", driver = "gpkg")
-  st_write(barriere_lokaal_vl, dsn = "../data/barriere_vl.gpkg", layer = "barriere_lokaal", driver = "gpkg")
+  st_write(barriere_vl, dsn = "../../data/barriere_vl.gpkg", layer = "barriere", driver = "gpkg")
+  st_write(barriere_lokaal_vl, dsn = "../../data/barriere_vl.gpkg", layer = "barriere_lokaal", driver = "gpkg")
 ```
 
