@@ -1,0 +1,324 @@
+---
+title: "Steekproeftrekking Poelkikker: update 2025"
+author: "Toon Westra, Jeroen Speybroeck"
+site: bookdown::bookdown_site
+output:
+  bookdown::html_document2:
+    keep_md: TRUE
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(
+  cache = FALSE,
+  autodep = TRUE,
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+```{r settings, cache = FALSE}
+library(sf)
+library(tidyverse)
+library(kableExtra)
+library(INBOtheme)
+library(leaflet)
+library(n2khab)
+library(rgdal)
+library(rgeos)
+library(units)
+
+conflicted::conflicts_prefer(dplyr::filter)
+
+```
+
+# Data
+
+## Steekproefkader 2025
+
+```{r}
+sampleframe_orig <- read_csv2("../data/steekproefkader meetnet poelkikker 2025_edit.csv")
+
+sampleframe <- sampleframe_orig %>%
+  st_as_sf(coords = c("lon", "lat"), crs = 4326)
+
+```
+
+## Steekporefkader origineel
+
+```{r}
+clusters_old <- st_read("../output/steekproefkader_poelkikker.gpkg", "gebieden")
+meetpunten_old <- st_read("../output/steekproefkader_poelkikker.gpkg", "meetpunten")
+```
+
+## Watervlakken
+
+```{r}
+watervlakken <- read_watersurfaces()
+
+```
+
+# Verkenning
+
+```{r}
+sampleframe_2025_buffer500 <- sampleframe %>%
+  st_transform(31370) %>%
+  st_buffer(500)
+
+watervlakken_in_buffer <- watervlakken %>%
+  st_join(sampleframe_2025_buffer500) %>%
+  filter(!is.na(naam)) %>%
+  st_drop_geometry()
+
+watervlakken_in_buffer500 <- watervlakken %>%
+  filter(polygon_id %in% watervlakken_in_buffer$polygon_id)
+
+rm(watervlakken)
+```
+
+```{r}
+
+meetpunten_old <- meetpunten_old %>%
+  mutate(show_color = ifelse(steekproef_poel, "blue", "red"))
+
+sampleframe %>%
+  leaflet %>%
+  addTiles() %>%
+  addCircleMarkers(label = ~naam, color = "yellow") %>%
+  addCircleMarkers(data = st_transform(meetpunten_old, crs = 4326), color = ~show_color) %>%
+  addPolygons(data = st_transform(watervlakken_in_buffer500, crs = 4326), label = ~polygon_id)
+```
+
+
+```{r}
+
+ranking_old <- meetpunten_old %>%
+  st_drop_geometry() %>%
+  select(polygon_id_nearest = watervlak_id, grts_ranking_poel) %>%
+  unique()
+
+ranking_cluster <- meetpunten_old %>%
+  st_drop_geometry() %>%
+  distinct(gebied_code, grts_ranking_gebied)
+
+cluster_old_unique <- clusters_old %>%
+  left_join(ranking_cluster, by = "gebied_code") %>%
+  group_by(grts_ranking_gebied) %>%
+  slice_head(n = 1) %>%
+  ungroup()
+ 
+check <- cluster_old_unique %>%
+  st_drop_geometry() %>%
+  group_by(grts_ranking_gebied) %>%
+  filter(n() > 1)
+
+sampleframe_2025 <- sampleframe %>%
+  st_transform(31370) %>%
+  st_join(select(watervlakken_in_buffer500, polygon_id)) %>%
+  st_join(select(watervlakken_in_buffer500, polygon_id_nearest = polygon_id), join = st_nearest_feature) %>%
+  group_by(naam) %>%
+  mutate(distance = min(st_distance(geometry, watervlakken_in_buffer500))) %>%
+  ungroup() %>%
+  left_join(ranking_old, by = "polygon_id_nearest") %>%
+  st_join(cluster_old_unique)
+
+
+```
+
+
+# Nieuwe clusters
+
+## Buffer rond nieuwe locaties
+
+```{r}
+
+sampleframe_new <- sampleframe_2025 %>%
+  filter(is.na(grts_ranking_gebied))
+
+d.max <- 500
+
+sampleframe_buffer <- st_buffer(sampleframe_new, dist = 2*d.max) %>%
+  select(naam)
+
+sampleframe_envelop <- gEnvelope(as_Spatial(sampleframe_buffer)) %>%
+  st_as_sf(crs = 31370) %>%
+  mutate(envelop = TRUE)
+
+gebied.basis <- st_buffer(sampleframe_new, dist = d.max) %>%
+  mutate(soort = "Poelkikker") %>%
+  group_by(soort) %>%
+  summarise(n_wnm = n()) %>%
+  ungroup()
+```
+
+
+Trek rond elk steekproefelement een buffer met afstand `r d.max` meter. 
+Overlappende buffers voegen we samen.
+
+
+## Breng barrières in rekening
+
+```{r}
+barriere <- read_sf("../data/barriere.shp", crs = 31370) %>%
+  st_join(sampleframe_envelop) %>%
+  filter(!is.na(envelop))
+
+```
+
+
+Zet de lijnvormige barrières om naar een (smal) vlak door er een buffer van 1m rond te trekken. In dit geval gebruiken we snelwegen, hoofdwegen, secundaire wegen, actieve spoorwegen, kanalen en rivieren uit OpenStreetMap en de gewestgrens van Vlaanderen van AGIV. 
+We verwijderen vervolgens deze barrières van de buffer rond de steekproefelementen. 
+Buffers die volledige door een barrière doorsneden worden zullen hierdoor gesplitst worden. 
+Verwijder delen van de buffer die geen steekproefelementen meer bevatten (omdat ze aan de andere kant van de barrière liggen). 
+Alle steekproefelementen die in eenzelfde polygoon vallen vormen samen een gebied.
+
+```{r splits_buffer}
+
+barriere_buffer <- barriere %>%
+  st_join(sampleframe_buffer) %>%
+  filter(!is.na(naam)) %>%
+  mutate(type_barrieres = str_c(unique(barriere), collapse = ", ")) %>%
+  group_by(type_barrieres) %>%
+  summarise(n_records = n()) %>%
+  ungroup() %>%
+  st_buffer(dist = 1)
+
+vlaanderen <- read_admin_areas(dsn = "flanders")
+
+gebied <- st_difference(gebied.basis, barriere_buffer) %>%
+  st_intersection(vlaanderen) %>%
+  st_cast("POLYGON") 
+
+gebied$gebied_id <- 1:nrow(gebied)
+
+relevant_gebied <- gebied %>%
+  st_join(sampleframe_new) %>%
+  filter(!is.na(naam)) %>%
+  st_drop_geometry() %>%
+  distinct(gebied_id, naam)
+  
+gebied_new <- gebied %>%
+  filter(gebied_id %in% relevant_gebied$gebied_id) %>%
+  select(gebied_id) %>%
+  mutate(gebied_id = str_c("2025_", gebied_id))
+
+sampleframe_new <- sampleframe_new %>%
+  st_join(gebied)
+
+sampleframe_buffer_aggregate <- sampleframe_buffer %>%
+  mutate(soort = "Poelkikker") %>%
+  group_by(soort) %>%
+  summarise(n = n()) %>%
+  ungroup() 
+
+buffer_final <- st_difference(sampleframe_buffer_aggregate, barriere_buffer) %>%
+  st_intersection(vlaanderen)  %>%
+  st_cast("POLYGON")
+
+buffer_final$buffer_id <- 1:nrow(buffer_final)
+
+relevant_buffer_final<- buffer_final %>%
+  st_join(sampleframe_new) %>%
+  filter(!is.na(naam)) %>%
+  st_drop_geometry() %>%
+  distinct(buffer_id, naam)
+  
+buffer_final <- buffer_final %>%
+  filter(buffer_id %in% relevant_buffer_final$buffer_id) %>%
+  select(buffer_id)
+
+rm(barriere)
+
+```
+
+```{r}
+
+sampleframe_old <- sampleframe_2025 %>%
+  filter(! naam %in% sampleframe_new$naam)
+
+gebied_new %>%
+  st_transform(4326) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addMarkers(data = st_transform(sampleframe_new, crs = 4326), label = ~naam) %>%
+  addCircleMarkers(data = st_transform(sampleframe_old, crs = 4326), label = ~naam, color = "yellow") %>%
+  addCircleMarkers(data = st_transform(meetpunten_old, crs = 4326), color = ~show_color, radius = 1) %>%
+  addPolygons(label = ~gebied_id) %>%
+  addPolygons(data = st_transform(cluster_old_unique, crs = 4326), color = "black")
+```
+
+## GRTS ranking toekennen aan nieuwe clusters
+
+```{r}
+grts_100 <- readRDS("../data/GRTS_100.rds")
+
+clusters_new_overlap <- clusters_new %>%
+  st_join(cluster_old_unique, largest = TRUE) %>%
+  filter(!is.na(gebied_code))
+
+cluster_new_centroid <- st_centroid(clusters_new) %>%
+  st_join(grts_100, join = st_nearest_feature) %>%
+  rename(grts_ranking_gebied_new = Ranking) %>%
+  st_join(cluster_old_unique) %>%
+  st_drop_geometry()
+
+rm(grts_100)
+```
+
+## GRTS ranking toekennen aan nieuwe locaties
+
+We behouden ranking van bestaande locatie indien nieuwe locatie op afstand < 50 meter ligt.
+
+```{r}
+sampleframe_2025_keep_ranking <- sampleframe_2025 %>%
+  filter(!is.na(grts_ranking_poel)) %>%
+  filter(drop_units(distance) < 50)
+
+grts_50 <- read_rds("../data/GRTS_50.rds")
+
+# st_crs(grts_50) <- 31370
+
+# grts_50 %>%
+#   write_rds("../data/GRTS_50.rds")
+
+new_ranking_watervlak <- sampleframe_2025 %>%
+  filter(!naam %in% sampleframe_2025_keep_ranking$naam) %>%
+  filter(drop_units(distance) < 50) %>%
+  select(-grts_ranking_poel)
+
+watervlakken_centroid <- watervlakken_in_buffer500 %>%
+  filter(polygon_id %in% new_ranking_watervlak$polygon_id_nearest) %>%
+  st_join(grts_50, join = st_nearest_feature) %>%
+  rename(grts_ranking_poel = Ranking) %>%
+  st_drop_geometry()
+  
+new_ranking_watervlak <- new_ranking_watervlak %>%
+  left_join(select(watervlakken_centroid, polygon_id_nearest = polygon_id, grts_ranking_poel))
+
+new_ranking_nt_watervlak <- sampleframe_2025 %>%
+  filter(!naam %in% sampleframe_2025_keep_ranking$naam) %>%
+  filter(drop_units(distance) >= 50) %>%
+  select(-grts_ranking_poel) %>%
+  st_join(grts_50, join = st_nearest_feature) %>%
+  rename(grts_ranking_poel = Ranking)
+
+rm(grts_50)
+
+sampleframe_points <- sampleframe_2025_keep_ranking %>%
+  select(naam, polygon_id = polygon_id_nearest, distance, grts_ranking_poel, gebied_code, grts_ranking_gebied) %>%
+  bind_rows(new_ranking_watervlak %>%
+              select(naam, polygon_id = polygon_id_nearest, distance, grts_ranking_poel, gebied_code, grts_ranking_gebied),
+            new_ranking_nt_watervlak %>%
+              select(naam, distance, grts_ranking_poel, gebied_code, grts_ranking_gebied))
+
+```
+
+
+
+
+
