@@ -1,0 +1,14 @@
+project:
+  type: book
+
+book:
+  title: "Zeggekorfslak"
+  author: "Toon Westra"
+  date: "27-08-2025"
+  chapters:
+    - index.qmd
+    - 2_zeggekorfslak.qmd
+
+format:
+  html:
+    embed-resources: true

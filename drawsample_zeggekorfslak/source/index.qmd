@@ -1,0 +1,470 @@
+---
+title: "Steekproeftrekking zeggekorfslak"
+author: "Toon Westra"
+format: 
+  html:
+    embed-resources: true
+editor: source
+date: "2025-08-22"
+toc: true
+number-sections: true
+code-fold: true
+lang: nl
+execute:
+  echo: false
+  warning: false
+---
+
+```{r}
+#|label: setup  
+#|output: false
+
+library(tidyverse)
+library(INBOtheme)
+library(sf)
+library(leaflet)
+library(leafpop)
+library(mapview)
+library(DT)
+library(units)
+library(n2khab)
+library(inbodb)
+library(git2rdata)
+library(grtsdb)
+library(kableExtra)
+library(units)
+
+conflicted::conflicts_prefer(dplyr::filter)
+
+```
+
+## Opbouw steekproefkader
+
+### Verspreidingsdata
+
+#### Meetnetten.be
+
+```{r}
+#| label: query-data-meetnetten
+#| eval: FALSE 
+
+con_mn <- connect_inbo_dbase("S0008_00_Meetnetten")
+
+data_mn <- get_meetnetten_observations(connection = con_mn,
+                                       scheme_name = "Zeggekorfslak",
+                                       collect = TRUE)
+
+data_mn %>%
+  write_csv2(str_c("../data/aantallen_zeggekorfslak_", Sys.Date(), ".csv"))
+
+```
+
+```{r}
+#| label: read-data-meetnetten 
+
+data_mn <- read_csv2("../data/aantallen_zeggekorfslak_2025-08-26.csv")
+
+data_mn <- data_mn %>%
+  mutate(jaar = year(start_date),
+         id = str_c("mn_", sample_id)) %>%
+  select(id, soort = scheme, jaar, datum = start_date, locatie = location, aantal = count, kleed = life_stage, x, y) %>%
+  mutate(bron = "meetnetten.be") %>%
+  st_as_sf(coords = c("x", "y"), crs = 4326) %>%
+  st_transform(crs = 31370)
+
+```
+
+
+#### Waarnemingen.be
+
+De data uit waarnemingen.be zijn samengevoegd in het bestand `data_mollusken.tsv` (downloaden uit [deze google drive](https://drive.google.com/drive/folders/1hoSdfHeq2pYntenFCujae8RS_q_w91X7) folder en bewaren in `data` folder van dit project). 
+
+```{r}
+#| label: read-data-waarnemingen
+
+data_wnm <- read_vc(file = "processed/data_mollusken",
+                             root = fileman_up("soortenmeetnetten-queries")) %>%
+  mutate(id = str_c("wnm_", id)) %>%
+  select(id, soort = meetnet, jaar, datum, locatie, aantal, kleed, x, y, gebied, validatie) %>%
+  mutate(nieuwe_locatie = is.na(locatie),
+         locatie = ifelse(is.na(locatie),
+                          ifelse(gebied != "" & !is.na(gebied), gebied, str_c("nieuw_", id)),
+                          locatie)) %>%
+  select(-gebied) %>%
+  mutate(bron = "waarnemingen.be") %>%
+  filter(soort == "Zeggekorfslak") %>%
+  st_as_sf(coords = c("x", "y"), crs = 31370)
+  
+```
+
+#### Bijkomende data INBO
+
+Het bestand 'Zkorf30112016.shp' bevat bijkomende data verzameld door het INBO.
+Het bestand bevindt zich in [deze google drive folder](https://drive.google.com/drive/folders/1mKINx4usyTrs_m_JSZnlPca4dJdBwfEE).
+
+```{r}
+#| label: read-data-inbo
+
+data_inbo <- read_sf("../data/Zkorf30112016.shp", crs = 31370) %>%
+  mutate(soort = "Zeggekorfslak") %>%
+  select(id = OBJECTID, soort, datum = MaxVandatu, aantal = MaxVanaant) %>%
+  mutate(id = str_c("inbo_", id),
+         jaar = year(datum),
+         bron = "inbo_extra")
+```
+
+#### Overzicht
+
+```{r}
+#| label: combine-all-data
+
+data_all <- data_mn %>%
+  bind_rows(data_wnm) %>%
+  bind_rows(data_inbo)
+
+```
+
+@fig-all-data geeft een overzicht van de waarnemingen van zeggekorfslak.
+
+```{r}
+#| label: fig-all-data
+#| fig-cap: Overzicht waarnemingen zeggekorfslak
+
+aanwezig <- data_all %>%
+  filter(aantal > 0)
+
+afwezig <- data_all %>%
+  filter(aantal == 0)
+
+mapview(aanwezig, 
+        layer.name = "zeggekorfslak aanwezig",
+        zcol = "bron",
+        popup = popupTable(aanwezig, zcol = c("datum", "aantal", "kleed", "bron")),
+        alpha = 0.5) +
+mapview(afwezig,
+        layer.name = "nulwaarnemingen",
+        cex = 1, 
+        col.regions = "grey",
+        alpha = 0.5)
+
+```
+
+```{r}
+#| label: write-all-data
+#| eval: FALSE  
+
+data_all %>%
+  st_write("../output/data_zeggekorfslak.gpkg")
+```
+
+### Potentieel leefgebied
+
+#### Defenitie potentieel leefgebied Zeggekorfslak
+
+In het monitoringsprotocol (Packet et al., 2018) wordt het potentieel leefgebied als volg gedefinieerd:
+
++ selectie polygonen van de Habitatkaart met een van volgende bwk-codes: 
+  +`mc` (Grote zeggenvegetaties)
+  + `mr` (Rietland)
+  + `vn` (Nitrofiel alluviaal elzenbos)
+  + `vm` (Elzenbroek)
+  + `md` (Drijfzoom en/of drijftil)
+  + `hfc` (Moerasspirearuigte)
++ selectie van polygonen
+  + met een van volgende bwk-codes: 
+    + `mk` (Alkalisch laagveen)
+    + `mp` (Duinpanvegetaties)
+    + `sf` (Vochtig wilgenstruweel op voedselrijke bodem)
+    + `va` (Alluviaal elzen-essenbos)
+    + `vc`(Bronbos)
+    + `hc` (Dotterbloemgrasland)
+  + EN gelegen op een afstand van maximaal 100 meter van een een polygoon met `mc` (Grote zeggenvegetaties)
+
+```{r}
+#| label: define-potential-habitat
+
+habitatmap <- read_habitatmap()
+
+habitatmap_stdized <- read_habitatmap_stdized()
+
+bwk_code_grote_zegge <- "^mc$"
+
+bwk_codes_leefgebied_strikt <- c("^mc$|^mr$|^vn$|^vm$|^md$|^hfc$")
+bwk_codes_leefgebied_extra <- c("^mk$|^mp$|^sf$|^va$|^vc$|^hc$")
+
+bwk_codes_leefgebied_ruim <- c("mc|mr|vn|vm|md|hfc")
+bwk_codes_leefgebied_extra_ruim <- c("mk|mp|sf|va|vc|hc")
+
+bwk_codes_leefgebied_variant <- c("mc|^vm$|^md$|^hfc$")
+bwk_codes_leefgebied_variant_extra <- c("^mk$|^mp$|^sf$|^va$|^vc$|^hc$|^mr$|^vn$")
+```
+
+Op basis van de [Habitatkaart (versie 2023)](https://zenodo.org/records/10353508) maken we een kaart van het leefgebied, door te selecteren op bovenstaande codes, inclusief de verschillende varianten op de codes (bv. naast `mr` ook `k(mr)`, `mrb°`, enz...). 
+@tab-bwk-pothab geeft een overzicht van alle geselecteerde BWK-codes als we het potentieel leefgebied op die manier afleiden en toont ook  de oppervlakte van de polygonen per BWK-code.
+
+```{r}
+#| label: potential-habitatmap
+
+leefgebied_basis_ruim <- habitatmap %>%
+  filter(str_detect(bwk_label, bwk_codes_leefgebied_ruim))
+
+mc_ruim <- habitatmap %>%
+  filter(str_detect(bwk_label, "mc")) %>%
+  mutate(type_leefgebied = "mc_ruim")
+
+mc_ruim_union <-  mc_ruim %>%
+  group_by(type_leefgebied) %>%
+  summarise(n_pol = n()) %>%
+  ungroup()
+
+leefgebied_extra_ruim <- habitatmap %>%
+  filter(str_detect(bwk_label, bwk_codes_leefgebied_extra_ruim)) %>%
+  mutate(distance_to_mc = drop_units(st_distance(geometry, mc_ruim_union))) %>%
+  filter(distance_to_mc <= 100) %>%
+  filter(!polygon_id %in% leefgebied_basis_ruim$polygon_id)
+
+leefgebied_ruim <- bind_rows(leefgebied_basis_ruim,
+                             leefgebied_extra_ruim) %>%
+  mutate(type_leefgebied = "ruim")
+
+leefgebied_ruim_union <-  leefgebied_ruim %>%
+  group_by(type_leefgebied) %>%
+  summarise(n_pol = n()) %>%
+  ungroup()
+
+```
+
+```{r}
+#| label: tab-bwk-pothab
+#| tbl-cap: Overzicht BWK-codes die deeluitmaken van potentieel leefgebied Zeggekorfslak
+
+overzicht_codes <- leefgebied_ruim %>%
+  st_drop_geometry() %>%
+  separate_rows(bwk_label, sep = " \\+ ") %>%
+  select(polygon_id, bwk_label, area_m2) %>%
+  filter(str_detect(bwk_label, bwk_codes_leefgebied_ruim) |
+           str_detect(bwk_label, bwk_codes_leefgebied_extra_ruim)) %>%
+  mutate(code_leefgebied_strikt = str_extract(bwk_label, str_c(bwk_codes_leefgebied_ruim, bwk_codes_leefgebied_extra_ruim, sep = "|"))) %>%
+  group_by(code_leefgebied_strikt, bwk_label) %>%
+  summarise(n = n(),
+            opp_ha = round(sum(area_m2)/10000, 1)) %>%
+  arrange(desc(n)) %>%
+  ungroup() %>%
+  arrange(code_leefgebied_strikt)
+
+  overzicht_codes %>%
+    group_by(code_leefgebied_strikt) %>%
+    mutate(bwk_label2 = str_replace(bwk_label,  "\\*", "\\\\*")) %>%
+    summarise(bwk_codes = str_c(str_c(bwk_label2, " (", opp_ha, " ha)"), collapse = "; ")) %>%
+    select("bwk-code hoofdgroep" = code_leefgebied_strikt, "geselecteerde bwk-codes uit Habitatkaart en oppervlakte" = bwk_codes) %>%
+    kable() %>%
+    kable_styling() %>%
+    collapse_rows(1)
+```
+
+Na evaluatie van bovenstaande tabel en op basis van expertkennis verfijnen we de afbakening van het leefgebied als volgt:
+
+  + enkel voor `mc` selecteren we alle varianten/combinaties uit de tweede kolom, voor de overige codes selecteren we enkel de 'zuivere' variant uit de eerste kolom
++ `mr` (Rietland) en `vn` (Nitrofiel alluviaal elzenbos) selecteren we enkel als die gelegen zijn op een afstand van een polygoon met `mc` (of een variant die mc bevat)
+
+```{r}
+
+selectie_leefgebied_variant_basis <- habitatmap_leefgebied_basis_ruim %>%
+  st_drop_geometry() %>%
+  separate_rows(bwk_label, sep =  " \\+ ") %>%
+  filter(str_detect(bwk_label, bwk_codes_leefgebied_variant)) %>%
+  select(polygon_id, bwk_label)
+
+leefgebied_variant_basis <- habitatmap %>%
+  filter(polygon_id %in% selectie_leefgebied_basis$polygon_id)
+
+selectie_leefgebied_variant_extra <- habitatmap %>%
+  st_drop_geometry() %>%
+  separate_rows(bwk_label, sep =  " \\+ ") %>%
+  filter(str_detect(bwk_label, bwk_codes_leefgebied_variant_extra)) %>%
+  select(polygon_id, bwk_label)
+
+leefgebied_variant_extra <- habitatmap %>%
+  filter(polygon_id %in% selectie_leefgebied_variant_extra$polygon_id) %>%
+  filter(!polygon_id %in% habitatmap_leefgebied_variant_basis$polygon_id) %>%
+  mutate(distance_to_mc = drop_units(st_distance(geometry, habitatmap_mc_ruim_union))) %>%
+  filter(distance_to_mc <= 100)
+
+leefgebied_variant <- bind_rows(habitatmap_leefgebied_variant_basis,
+                                   habitatmap_leefgebied_variant_extra) %>%
+  mutate(type_leefgebied = "basis + extra variant")
+
+leefgebied_variant_union <-  habitatmap_leefgebied_variant %>%
+  group_by(type_leefgebied) %>%
+  summarise(n_pol = n()) %>%
+  ungroup()
+
+#st_write(habitatmap_leefgebied_variant, "../output/meetnet_zeggekorfslak.gpkg", "potentieel_leefgebied_2023", driver = "gpkg")
+
+```
+
+```{r}
+habitatmap_stdized <- read_habitatmap_stdized()
+
+habitatmap_rbbmc <- habitatmap_stdized$habitatmap_types %>%
+  filter(type == "rbbmc") 
+
+leefgebied_rbbmc <- habitatmap_stdized$habitatmap_polygons %>%
+  inner_join(habitatmap_rbbmc, by = "polygon_id") %>%
+  mutate(type_leefgebied = "rbbmc")
+
+leefgebied_rbbmc_union <-  leefgebied_rbbmc %>%
+  group_by(type_leefgebied) %>%
+  summarise(n_pol = n()) %>%
+  ungroup()
+
+st_write(leefgebied_rbbmc, "../output/inhaalslag_zeggekorfslak.gpkg", "rbbmc", driver = "gpkg", delete_layer = TRUE)
+```
+
+## GRTS grid
+
+We maken een 250 m x 250 m grid met een unieke grts-ranking voor elke gridcel.
+
+```{r}
+#| label: make-grts-grid
+
+cellsize <- 250
+
+bbox_sampleframe <- read_admin_areas(dsn = "flanders") %>%
+  st_buffer(dist = cellsize * 2) %>%
+  st_bbox()
+
+xmin <- floor(bbox_sampleframe$xmin/1000)*1000 - cellsize / 2
+ymin <- floor(bbox_sampleframe$ymin/1000)*1000 - cellsize / 2
+xmax <- ceiling(bbox_sampleframe$xmax/1000)*1000 + cellsize / 2
+ymax <- ceiling(bbox_sampleframe$ymax/1000)*1000 + cellsize / 2
+
+# we add a row or a column when we have an odd number of rows or columns
+# otherwise the grid created with grtsdb package is not correct (point coordinates are not in the center of the cell)
+
+xres <- (xmax - xmin) / cellsize
+yres <- (ymax - ymin) / cellsize
+
+is_odd <- function(x){round(x/2) != x/2}
+
+if (is_odd(xres)) {
+  xmin = xmin - cellsize
+}
+
+if (is_odd(yres)) {
+  ymin = ymin - cellsize
+}
+
+xres <- (xmax - xmin) / cellsize
+yres <- (ymax - ymin) / cellsize
+
+bbox <- rbind(
+  x = c(xmin, xmax),
+  y = c(ymin, ymax)
+)
+
+db <- connect_db()
+  
+add_level(bbox = bbox, cellsize = cellsize, grtsdb = db)
+ 
+full_grid <- extract_sample(
+  grtsdb = db, samplesize = 1000000, bbox = bbox, cellsize = cellsize
+)
+
+steekproefkader_hok <- full_grid %>%
+  mutate(geom = str_c("POLYGON ((", x1c - cellsize / 2, " ", x2c - cellsize / 2, 
+                                ",", x1c + cellsize / 2, " ", x2c - cellsize / 2,
+                                ",", x1c + cellsize / 2, " ", x2c + cellsize / 2,
+                                ",", x1c - cellsize / 2, " ", x2c + cellsize / 2,
+                                ",", x1c - cellsize / 2, " ", x2c - cellsize / 2, "))")) %>%
+  st_as_sf(wkt = "geom", crs = 31370)
+
+```
+`
+De steekproef is reproduceerbaar op basis van de database `grts.sqlite`.
+
+### Aanwezigheid van zeggekorfslak per hok
+
+```{r}
+aanwezigheid_hok <- data_all %>%
+  st_join(steekproefkader_hok) %>%
+  st_drop_geometry() %>%
+  mutate(aanwezigheid = ifelse(aantal > 0, "aanwezig", "afwezig")) %>%
+  group_by(ranking, soort) %>%
+  mutate(tot_aantal = sum(aantal),
+         locatie = str_c(unique(locatie), collapse = ";")) %>%
+  ungroup() %>%
+  group_by(ranking, soort, locatie, tot_aantal, aanwezigheid) %>%
+  summarise(jaar_max = max(jaar),
+            n_points = n(),
+            bron = str_c(unique(bron), collapse = "; ")) %>%
+  ungroup()
+
+aanwezigheid_hok_wide <- aanwezigheid_hok %>%
+  pivot_wider(names_from = aanwezigheid,
+              values_from = c(jaar_max, n_points, bron))
+
+steekproefkader_hok_aanwezig <- steekproefkader_hok %>%
+  inner_join(aanwezigheid_hok_wide, by = "ranking") %>%
+  mutate(selectie_aanwezigheid = ifelse(tot_aantal <= 0, FALSE,
+                                        ifelse(is.na(jaar_max_afwezig), TRUE,
+                                               ifelse((jaar_max_afwezig - jaar_max_aanwezig) > 6 & n_points_afwezig >= 3, FALSE, TRUE))))
+
+```
+
+### Potentieel leefgebied per hok
+
+```{r}
+leefgebied_hok_inters <- steekproefkader_hok %>%
+  st_intersection(leefgebied_variant) %>%
+  mutate(area = st_area(geom)) %>%
+  st_drop_geometry()
+
+leefgebied_hok <- leefgebied_hok_inters %>%
+  group_by(ranking) %>%
+  summarise(opp_leefgebied_ha = sum(drop_units(area)) / 10000) %>%
+  ungroup() %>%
+  mutate(prop_leefgebied = round(opp_leefgebied_ha / (2.50 * 2.50), 3)) %>%
+  filter(prop_leefgebied > 0.01)
+
+steekproefkader_leefgebied <- steekproefkader_hok %>%
+  inner_join(leefgebied_hok, by = "ranking")
+
+```
+
+```{r}
+rbbmc_hok_inters <- steekproefkader_hok %>%
+  st_intersection(leefgebied_rbbmc) %>%
+  mutate(area = st_area(geom)) %>%
+  st_drop_geometry()
+
+rbbmc_hok <- rbbmc_hok_inters %>%
+  group_by(ranking) %>%
+  summarise(opp_rbbmc_ha = sum(drop_units(area)) / 10000) %>%
+  ungroup() %>%
+  mutate(prop_rbbmc = round(opp_rbbmc_ha / (2.50 * 2.50), 3)) %>%
+  filter(prop_rbbmc > 0.01)
+
+steekproefkader_leefgebied <- steekproefkader_hok %>%
+  inner_join(leefgebied_hok, by = "ranking")
+
+```
+
+```{r}
+selectie_hok_aanwezig <- steekproefkader_hok_aanwezig %>%
+  filter(selectie_aanwezigheid)
+
+data_all <- data_all %>%
+  mutate(aanwezigheid = ifelse(aantal > 0, "aanwezig", "afwezig"))
+
+mapview(selectie_hok_aanwezig) +
+mapView(habitatmap_leefgebied_variant_union, col.regions = "green", alpha = 0.5) +
+ mapView(habitatmap_leefgebied_rbbmc_union, col.regions = "darkgreen", alpha = 0.5) +
+ mapview(data_all, 
+        layer.name = "aanwezigheid zeggekorfslak",
+        zcol = c("aanwezigheid"),
+        popup = popupTable(aanwezig, zcol = c("datum", "aantal", "kleed", "bron")),
+        alpha = 0.3,
+        cex = 2)
+
+```

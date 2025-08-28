@@ -1,0 +1,22 @@
+[
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Zeggekorfslak",
+    "section": "",
+    "text": "1 Quarto\nQuarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see https://quarto.org.\n\n1 + 1\n\n[1] 2",
+    "crumbs": [
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>zeggekorfslak</span>"
+    ]
+  },
+  {
+    "objectID": "2_zeggekorfslak.html",
+    "href": "2_zeggekorfslak.html",
+    "title": "2  Test",
+    "section": "",
+    "text": "defefe",
+    "crumbs": [
+      "<span class='chapter-number'>2</span>  <span class='chapter-title'>Test</span>"
+    ]
+  }
+]
