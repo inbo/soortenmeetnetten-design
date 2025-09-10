@@ -110,17 +110,23 @@ De data uit waarnemingen.be zijn samengevoegd in het bestand `data_mollusken.tsv
 ```{r}
 #| label: read-data-waarnemingen
 
-data_wnm <- read_vc(file = "processed/data_mollusken",
-                             root = fileman_up("soortenmeetnetten-queries")) %>%
-  mutate(id = str_c("wnm_", id)) %>%
-  select(id, soort = meetnet, jaar, datum, locatie, aantal, kleed, x, y, gebied, validatie) %>%
+data_wnm <- read_csv2("../data/INBODATAVR-439_zegge-korfslak_wbe_VL_DumpTem20250831.csv") %>%
+  mutate(id = str_c("wnm_", wn_id),
+         soort = "Zeggekorfslak",
+         datum = as.Date(datum, format = "%d/%m/%Y"),
+         jaar = year(datum),
+         validatie = ifelse(str_detect(status, "Goedgekeurd"), "goedgekeurd", "onbehandeld")
+         ) %>%
+  st_as_sf(coords = c("x", "y"), crs = 31370, remove = FALSE) %>%
+  st_join(select(st_transform(locaties_mn, crs = 31370), locatie = location)) %>%
+  select(id, soort, jaar, datum, locatie, aantal, kleed, x, y, gebied, validatie) %>%
   mutate(nieuwe_locatie = is.na(locatie),
          locatie = ifelse(is.na(locatie),
                           ifelse(gebied != "" & !is.na(gebied), gebied, str_c("nieuw_", id)),
                           locatie)) %>%
   select(-gebied) %>%
   mutate(bron = "waarnemingen.be") %>%
-  filter(soort == "Zeggekorfslak")
+  st_drop_geometry()
 
 data_wnm_remove <- data_wnm %>%
   st_as_sf(coords = c("x", "y"), crs = 31370) %>%
@@ -128,7 +134,7 @@ data_wnm_remove <- data_wnm %>%
   semi_join(data_mn, by = c("locatie", "datum")) %>%
   filter(distance_mn < 100)
 
-data_wnm <- data_wnm %>%
+data_wnm <- data_wnm  %>%
   anti_join(data_wnm_remove, by = "id") %>%
   filter(kleed != "lege schelp of losse klep") %>%
   group_by(bron, soort, id,  jaar, datum, locatie, nieuwe_locatie, x, y, validatie) %>%
@@ -667,6 +673,10 @@ steekproefkader_select <- steekproefkader_basis %>%
   bind_rows(steekproefkader_uitbreiding2) %>%
   mutate(ranking_rel = rank(ranking),
          steekproef = ranking_rel <= N)
+
+steekproefkader_select %>%
+  select(locatie, ranking, ranking_rel, type_selectie, tot_aantal, jaar_max_aanwezig, prop_leefgebied, prop_rbbmc, bron_aanwezig, locatie_inhaalslag, locatie_status) %>%
+  st_write(dsn = "../output/steekproefkader_zeggekorfslak.gpkg", "hokken_250", delete_layer = TRUE)
 ```
 
 @fig-steekproefkader toont een overzicht van de selectie van de hokken, de puntlocaties met waarnemingen van minstens 1 individu en polygonen met potentieel leefgebied.
