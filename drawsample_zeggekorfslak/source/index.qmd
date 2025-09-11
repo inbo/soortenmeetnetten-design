@@ -105,7 +105,8 @@ data_mn_union <- data_mn %>%
 
 #### Waarnemingen.be
 
-De data uit waarnemingen.be zijn samengevoegd in het bestand `data_mollusken.tsv` (downloaden uit [deze google drive](https://drive.google.com/drive/folders/1hoSdfHeq2pYntenFCujae8RS_q_w91X7) folder en bewaren in `data` folder van dit project). 
+De data uit waarnemingen.be zijn samengevoegd in het bestand `INBODATAVR-439_zegge-korfslak_wbe_VL_DumpTem20250831.csv` (downloaden uit [deze google drive](https://drive.google.com/drive/folders/116iKx0i02a0Rmf4h-_OYLC6UmFvs86fO) folder en bewaren in `data` folder van dit project). 
+De dataset bevat alle waarnemingen van zeggekorfslak t.e.m. 31-08-2025.
 
 ```{r}
 #| label: read-data-waarnemingen
@@ -633,8 +634,15 @@ Hierbij moeten we een afweging maken tussen:
 + voldoende representativiteit van het steekproefkader (er is nog een groot deel van het potentieel leefgebied niet onderzocht, maar de trefkans is er laag)
 
 Als basis selecteren we de hokken met recente aanwezigheid van zeggekorfslak.
+Meer concreet gaat het om alle hokken met effectieve waarnemingen van zeggekorfslak sinds 2008.
 
-Daarnaast kunnen volgende 'uitbreidingen' overwogen worden:
+Sommige hokken bevatten naast effectieve waarnemingen ook nulwaarnemingen.
+Deze hokken worden niet weerhouden indien:
+
++ er minstens 3 nulwaarnemingen in het hok liggen
++ EN, de meest recente effectieve waarneming minstens 6 jaar ouder is dan de meest recente nulwaarneming 
+
+Naast de hokken met effectieve waarnemingen van zeggekorfslak, kunnen volgende 'uitbreidingen' van het steekproefkader overwogen worden:
 
 + uitbreiding 1: 
   + hokken in inhaalslag locatie met aanwezigheid van de soort, maar geen (nul)waarnemingen in het hok zelf (zeggekorfslak werd dus wel waargenomen in een ander hok binnen de inhaalslag locatie)
@@ -673,10 +681,10 @@ steekproefkader_select <- steekproefkader_basis %>%
   bind_rows(steekproefkader_uitbreiding2) %>%
   mutate(ranking_rel = rank(ranking),
          steekproef = ranking_rel <= N)
-
-steekproefkader_select %>%
-  select(locatie, ranking, ranking_rel, type_selectie, tot_aantal, jaar_max_aanwezig, prop_leefgebied, prop_rbbmc, bron_aanwezig, locatie_inhaalslag, locatie_status) %>%
-  st_write(dsn = "../output/steekproefkader_zeggekorfslak.gpkg", "hokken_250", delete_layer = TRUE)
+# 
+# steekproefkader_select %>%
+#   select(locatie, ranking, ranking_rel, type_selectie, tot_aantal, jaar_max_aanwezig, prop_leefgebied, prop_rbbmc, bron_aanwezig, locatie_inhaalslag, locatie_status) %>%
+#   st_write(dsn = "../output/steekproefkader_zeggekorfslak.gpkg", "hokken_250", delete_layer = TRUE)
 ```
 
 @fig-steekproefkader toont een overzicht van de selectie van de hokken, de puntlocaties met waarnemingen van minstens 1 individu en polygonen met potentieel leefgebied.
