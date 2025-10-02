@@ -102,11 +102,9 @@ data_mn_union <- data_mn %>%
   ungroup()
 ```
 
-
 #### Waarnemingen.be
 
-De data uit waarnemingen.be zijn samengevoegd in het bestand `INBODATAVR-439_zegge-korfslak_wbe_VL_DumpTem20250831.csv` (downloaden uit [deze google drive](https://drive.google.com/drive/folders/116iKx0i02a0Rmf4h-_OYLC6UmFvs86fO) folder en bewaren in `data` folder van dit project). 
-De dataset bevat alle waarnemingen van zeggekorfslak t.e.m. 31-08-2025.
+De data uit waarnemingen.be zijn samengevoegd in het bestand `INBODATAVR-439_zegge-korfslak_wbe_VL_DumpTem20250831.csv` (downloaden uit [deze google drive](https://drive.google.com/drive/folders/116iKx0i02a0Rmf4h-_OYLC6UmFvs86fO) folder en bewaren in `data` folder van dit project). De dataset bevat alle waarnemingen van zeggekorfslak t.e.m. 31-08-2025.
 
 ```{r}
 #| label: read-data-waarnemingen
@@ -265,22 +263,22 @@ data_all %>%
 
 In het monitoringsprotocol (Packet et al., 2018) wordt het potentieel leefgebied als volg gedefinieerd:
 
-+ selectie polygonen van de Habitatkaart met een van volgende bwk-codes: 
-  + `mc` (Grote zeggenvegetaties)
-  + `mr` (Rietland)
-  + `vn` (Nitrofiel alluviaal elzenbos)
-  + `vm` (Elzenbroek)
-  + `md` (Drijfzoom en/of drijftil)
-  + `hfc` (Moerasspirearuigte)
-+ selectie van polygonen
-  + met een van volgende bwk-codes: 
-    + `mk` (Alkalisch laagveen)
-    + `mp` (Duinpanvegetaties)
-    + `sf` (Vochtig wilgenstruweel op voedselrijke bodem)
-    + `va` (Alluviaal elzen-essenbos)
-    + `vc`(Bronbos)
-    + `hc` (Dotterbloemgrasland)
-  + EN gelegen op een afstand van maximaal 100 meter van een een polygoon met `mc` (Grote zeggenvegetaties)
+-   selectie polygonen van de Habitatkaart met een van volgende bwk-codes:
+    -   `mc` (Grote zeggenvegetaties)
+    -   `mr` (Rietland)
+    -   `vn` (Nitrofiel alluviaal elzenbos)
+    -   `vm` (Elzenbroek)
+    -   `md` (Drijfzoom en/of drijftil)
+    -   `hfc` (Moerasspirearuigte)
+-   selectie van polygonen
+    -   met een van volgende bwk-codes:
+        -   `mk` (Alkalisch laagveen)
+        -   `mp` (Duinpanvegetaties)
+        -   `sf` (Vochtig wilgenstruweel op voedselrijke bodem)
+        -   `va` (Alluviaal elzen-essenbos)
+        -   `vc`(Bronbos)
+        -   `hc` (Dotterbloemgrasland)
+    -   EN gelegen op een afstand van maximaal 100 meter van een een polygoon met `mc` (Grote zeggenvegetaties)
 
 ```{r}
 #| label: define-potential-habitat
@@ -297,8 +295,7 @@ bwk_codes_leefgebied_variant <- c("mc|^vm$|^md$|^hfc$")
 bwk_codes_leefgebied_variant_extra <- c("^mk$|^mp$|^sf$|^va$|^vc$|^hc$|^mr$|^vn$")
 ```
 
-Op basis van de [Habitatkaart (versie 2023)](https://zenodo.org/records/10353508) maken we een kaart van het leefgebied, door te selecteren op bovenstaande codes, inclusief de verschillende varianten op de codes (bv. naast `mr` ook `k(mr)`, `mrb°`, enz...). 
-@tbl-bwk-pothab geeft een overzicht van alle geselecteerde BWK-codes als we het potentieel leefgebied op die manier afleiden en toont ook  de oppervlakte van de polygonen per BWK-code.
+Op basis van de [Habitatkaart (versie 2023)](https://zenodo.org/records/10353508) maken we een kaart van het leefgebied, door te selecteren op bovenstaande codes, inclusief de verschillende varianten op de codes (bv. naast `mr` ook `k(mr)`, `mrb°`, enz...). @tbl-bwk-pothab geeft een overzicht van alle geselecteerde BWK-codes als we het potentieel leefgebied op die manier afleiden en toont ook de oppervlakte van de polygonen per BWK-code.
 
 ```{r}
 #| label: potential-habitatmap
@@ -346,7 +343,6 @@ leefgebied_ruim_union <-  leefgebied_ruim %>%
 
 ```
 
-
 ```{r}
 #| label: tbl-bwk-pothab
 #| tbl-cap: Overzicht BWK-codes die deeluitmaken van potentieel leefgebied Zeggekorfslak
@@ -377,8 +373,8 @@ overzicht_codes <- leefgebied_ruim %>%
 
 Na evaluatie van bovenstaande tabel en op basis van expertkennis verfijnen we de afbakening van het leefgebied als volgt:
 
-  + enkel voor `mc` selecteren we alle varianten/combinaties uit de tweede kolom, voor de overige codes selecteren we enkel de 'zuivere' variant uit de eerste kolom
-+ `mr` (Rietland) en `vn` (Nitrofiel alluviaal elzenbos) selecteren we enkel als die gelegen zijn op een afstand van een polygoon met `mc` (of een variant die mc bevat)
+-   enkel voor `mc` selecteren we alle varianten/combinaties uit de tweede kolom, voor de overige codes selecteren we enkel de 'zuivere' variant uit de eerste kolom
+-   `mr` (Rietland) en `vn` (Nitrofiel alluviaal elzenbos) selecteren we enkel als die gelegen zijn op een afstand van een polygoon met `mc` (of een variant die mc bevat)
 
 ```{r}
 #| label: potentieel-leefgebied-variant
@@ -429,7 +425,6 @@ leefgebied_variant_union <-  leefgebied_variant %>%
   summarise(n_pol = n()) %>%
   ungroup()
 ```
-
 
 ```{r}
 habitatmap_stdized <- read_habitatmap_stdized()
@@ -519,11 +514,11 @@ De steekproef is reproduceerbaar op basis van de database `grts.sqlite`.
 
 Voor elk hok van het GRTS-grid bepalen we:
 
-+ totaal aantal individuen van zeggekorfslak
-+ jaar van meest recente waarneming van minstens 1 individu
-+ jaar van meest recente nulwaarneming
-+ aantal punten met waarneming van minstens 1 individu
-+ aantal punten met nulwaarneming
+-   totaal aantal individuen van zeggekorfslak
+-   jaar van meest recente waarneming van minstens 1 individu
+-   jaar van meest recente nulwaarneming
+-   aantal punten met waarneming van minstens 1 individu
+-   aantal punten met nulwaarneming
 
 ```{r}
 #| label: aanwezigheid-hok
@@ -558,8 +553,8 @@ steekproefkader_hok_aanwezig <- steekproefkader_hok %>%
 
 We berekenen binnen elk hok de proportie van:
 
-+ potentieel leefgebied (variant)
-+ rbb mc
+-   potentieel leefgebied (variant)
+-   rbb mc
 
 ```{r}
 #| label: leefgebied-hok
@@ -599,12 +594,12 @@ steekproefkader_kenm <- steekproefkader_hok_aanwezig %>%
 
 De status van de locaties (zoekgebieden) in de inhaalslag heeft volgende categorieën:
 
-+ locatie ongeschikt
-+ locatie ontoegankelijk
-+ zeggekorfslak aanwezig
-+ zeggekorfslak afwezig (nulwaarnemingen voor minstens 5 punten)
-+ locatie onvoldoende onderzocht (minder dan 5 nulwaarnemingen)
-+ locatie niet onderzocht (geen waarnemingen)
+-   locatie ongeschikt
+-   locatie ontoegankelijk
+-   zeggekorfslak aanwezig
+-   zeggekorfslak afwezig (nulwaarnemingen voor minstens 5 punten)
+-   locatie onvoldoende onderzocht (minder dan 5 nulwaarnemingen)
+-   locatie niet onderzocht (geen waarnemingen)
 
 Voor elk hok bepalen we de status van de inhaalslag locatie waarmee het overlapt.
 
@@ -618,39 +613,44 @@ status_hok <- steekproefkader_hok %>%
   filter(!is.na(locatie)) %>%
   select(ranking, locatie_inhaalslag = locatie, locatie_status)
 
+provinces <- read_admin_areas(dsn = "provinces") %>%
+  select(provincie = name)
+
+ecoregions <- read_ecoregions() %>%
+  select(ecoregio = region_name)
+
 steekproefkader_kenm <- steekproefkader_hok_aanwezig %>%
   left_join(leefgebied_hok, by = "ranking") %>%
   left_join(rbbmc_hok, by = "ranking") %>%
   left_join(status_hok, by = "ranking") %>%
-  filter(!(is.na(opp_leefgebied_ha) & is.na(soort)))
+  filter(!(is.na(opp_leefgebied_ha) & is.na(soort))) %>%
+  st_join(provinces, largest = TRUE) %>%
+  st_join(ecoregions, largest = TRUE)
+
 ```
 
 ## Selectie hokken in steekproefkader
 
-Vooraleer we een steekproef trekken moeten we bepalen welke hokken tot het steekproefkader behoren.
-Hierbij moeten we een afweging maken tussen:
+Vooraleer we een steekproef trekken moeten we bepalen welke hokken tot het steekproefkader behoren. Hierbij moeten we een afweging maken tussen:
 
-+ voldoende trefkans per hok
-+ voldoende representativiteit van het steekproefkader (er is nog een groot deel van het potentieel leefgebied niet onderzocht, maar de trefkans is er laag)
+-   voldoende trefkans per hok
+-   voldoende representativiteit van het steekproefkader (er is nog een groot deel van het potentieel leefgebied niet onderzocht, maar de trefkans is er laag)
 
-Als basis selecteren we de hokken met recente aanwezigheid van zeggekorfslak.
-Meer concreet gaat het om alle hokken met effectieve waarnemingen van zeggekorfslak sinds 2008.
+Als basis selecteren we de hokken met recente aanwezigheid van zeggekorfslak. Meer concreet gaat het om alle hokken met effectieve waarnemingen van zeggekorfslak sinds 2008.
 
-Sommige hokken bevatten naast effectieve waarnemingen ook nulwaarnemingen.
-Deze hokken worden niet weerhouden indien:
+Sommige hokken bevatten naast effectieve waarnemingen ook nulwaarnemingen. Deze hokken worden niet weerhouden indien:
 
-+ er minstens 3 nulwaarnemingen in het hok liggen
-+ EN, de meest recente effectieve waarneming minstens 6 jaar ouder is dan de meest recente nulwaarneming 
+-   er minstens 3 nulwaarnemingen in het hok liggen
+-   EN, de meest recente effectieve waarneming minstens 6 jaar ouder is dan de meest recente nulwaarneming
 
 Naast de hokken met effectieve waarnemingen van zeggekorfslak, kunnen volgende 'uitbreidingen' van het steekproefkader overwogen worden:
 
-+ uitbreiding 1: 
-  + hokken in inhaalslag locatie met aanwezigheid van de soort, maar geen (nul)waarnemingen in het hok zelf (zeggekorfslak werd dus wel waargenomen in een ander hok binnen de inhaalslag locatie)
-  + EN minstens 10 % rbb mc of 75% leefgebied (om voldoende trefkans te verzekeren)
-  
-+ uitbreiding 2: 
-  + hokken in niet of onvoldoende onderzochte inhaalslag locaties
-  + EN minstens 20 % rbb mc (om voldoende trefkans te verzekeren)
+-   uitbreiding 1:
+    -   hokken in inhaalslag locatie met aanwezigheid van de soort, maar geen (nul)waarnemingen in het hok zelf (zeggekorfslak werd dus wel waargenomen in een ander hok binnen de inhaalslag locatie)
+    -   EN minstens 10 % rbb mc of 75% leefgebied (om voldoende trefkans te verzekeren)
+-   uitbreiding 2:
+    -   hokken in niet of onvoldoende onderzochte inhaalslag locaties
+    -   EN minstens 20 % rbb mc (om voldoende trefkans te verzekeren)
 
 ```{r}
 #| label: selectie-hok-steekproefkader
@@ -725,27 +725,15 @@ overzicht_hokken_steekproefkader %>%
 
 ```
 
-Na manuele controle van de hokken in 'uitbreiding 2' beluiten we dat deze hokken een zeer lage kans op aanwezigheid van zeggekorfslak hebben.
-We weerhouden dus enkele de 'basis' en 'uitbreiding 1' hokken voor de selectie van de steekproef.
+Na manuele controle van de hokken in 'uitbreiding 2' beluiten we dat deze hokken een zeer lage kans op aanwezigheid van zeggekorfslak hebben. We weerhouden dus enkele de 'basis' en 'uitbreiding 1' hokken voor de selectie van de steekproef.
 
 ```{r}
+#| label: select-sk
+
  steekproefkader_select <- steekproefkader_select %>%
   filter(type_selectie %in% c("basis", "uitbreiding1")) %>%
   mutate(ranking_rel = rank(ranking),
          steekproef = ranking_rel <= N)
-
-# steekproefkader_select %>%
-#   select(locatie, ranking, ranking_rel, type_selectie, tot_aantal, jaar_max_aanwezig, prop_leefgebied, prop_rbbmc, bron_aanwezig, locatie_inhaalslag, locatie_status) %>%
-#   st_write(dsn = "../output/meetnet_zeggekorfslak.gpkg", "steekproefkader", delete_layer = TRUE)
-
-steekproef <- steekproefkader_select %>%
-  filter(steekproef) %>%
-  arrange(ranking_rel) %>%
-  mutate(naam = ifelse(!is.na(locatie_inhaalslag), locatie_inhaalslag, locatie)) %>%
-  select(naam, ranking_rel, type_selectie, tot_aantal)
-
-# steekproef %>%
-#   st_write(dsn = "../output/meetnet_zeggekorfslak.gpkg", "steekproef", delete_layer = TRUE)
 
 leefgebied_steekproefkader <- leefgebied_variant %>%
   st_join(steekproefkader_select, largest = TRUE) %>%
@@ -767,25 +755,179 @@ rbb_mc_steekproefkader <- leefgebied_rbbmc %>%
 #   st_write(dsn = "../output/meetnet_zeggekorfslak.gpkg", "zeggekorfslak_aanwezig", delete_layer = TRUE)
 ```
 
-
 ## Steekproef
 
-We stellen voor om 60 hokken te selecteren die in een meetcyclus van 6 jaar worden geteld (@tbl-overzicht-s).
+```{r}
+#| label: strata-ecoregio
+
+overzicht_ecoregio <- steekproefkader_select %>%
+  st_drop_geometry() %>%
+  mutate(tot_steekproefkader = n(),
+         tot_steekproef = sum(steekproef)) %>%
+  group_by(ecoregio) %>%
+  summarise(n_steekproefkader = n(),
+            n_steekproef = sum(steekproef),
+            prop_steekproefkader = round(n() / 100, 3),
+            prop_steekproef = round(sum(steekproef) / 60, 3),
+            n_steekproef_stratificatie = round(n_steekproefkader * 60/100)) %>%
+  ungroup() 
+
+samplesize_ecoregio <- overzicht_ecoregio %>%
+  select(ecoregio, n_strata = n_steekproef_stratificatie)
+
+steekproefkader_select <- steekproefkader_select %>%
+  left_join(samplesize_ecoregio, by = "ecoregio") %>%
+  group_by(ecoregio) %>%
+  mutate(ranking_rel_ecoregio = rank(ranking),
+         steekproef_stratified = ranking_rel_ecoregio <= n_strata) %>%
+  ungroup()
+```
+
+We selecteren 60 hokken die in een meetcyclus van 6 jaar worden geteld.
+
+We willen met de steekproef ook een goed zicht krijgen op de verspreiding van de soort. Daarom passen we een gestratificeerde steekproef toe op basis van de ecoregio's. We selecteren een aantal hokken per ecoregio op basis van de relatieve ranking binnen de ecoregio. De steekproefgrootte per ecoregio is proportioneel met het aantal hokken per ecoregio in het steekproefkader.
+
+@tbl-overzicht-ecoregio toont de steekproefgrootte per ecoregio met en zonder stratificatie.
+
+```{r}
+#| label: tbl-overzicht-ecoregio
+#| tbl-cap: Aantal geselecteerde hokken met en zonder stratificatie volgens ecoregio
+
+overzicht_ecoregio %>%
+  select(ecoregio, n_steekproefkader, n_steekproef, n_steekproef_stratificatie) %>%
+  kable() %>%
+  kable_styling()
+```
+
+Als we hokken selecteren volgens de relatieve ranking binnen de ecoregio zien we dat in sommige gebieden relatief veel hokken geselecteerd worden. Anderzijds zijn er soms sterk geïsoleerde hokken die niet in de steekproef voorkomen, maar wel van belang zijn om goed zicht te krijgen op de verspreiding.
+
+Daarom doen we volgende (beperkte) manuele optimalisatie om nog een iets betere spreiding van de steekproef te bekomen:
+
+-   Ecoregio van de zuidoostelijke heuvelzone
+
+    -   Uit: Sint-Joris-Winge - Walenbos (relatieve ranking = 8)
+    -   Uit: Huldenberg - Laanvallei - Onderbos (relatieve ranking = 12)
+    -   In: Assent - Paepenbroek (relatieve ranking = 17)
+    -   In: Steenputbeek (relatieve ranking = 25)
+    
+-   Ecoregio van de zuidwestelijke heuvelzone
+
+    -   Uit: Boelaremeersen (relatieve ranking = 2)
+    -   In: Ninove - Dendervallei (relatieve ranking = 19)
+
+-   Ecoregio van de krijt-leemgebieden
+
+    -   Uit: Rijkhoven - Molenbeemden (relatieve ranking = 9)
+    -   Uit: De Kevie (relatieve ranking = 8)
+    -   In: Zammelen (relatieve ranking = 16)
+    -   In: Wintershoven (relatieve ranking = 17)
+    
+-   Ecoregio van de polders en de getijdenschelde
+
+    -   Uit: Weert Briel (relatieve ranking = 7)
+    -   In: Sint-Onolfspolder (relatieve ranking = 18)  
+
+```{r}
+steekproefkader_select <- steekproefkader_select %>%
+  mutate(steekproef_finaal = steekproef_stratified,
+         steekproef_finaal = ifelse(ecoregio == "Ecoregio van de zuidoostelijke heuvelzone",
+                                    ifelse(ranking_rel_ecoregio %in% c(8, 12), FALSE,
+                                           ifelse(ranking_rel_ecoregio %in% c(17, 25), TRUE, steekproef_finaal)),
+                                    steekproef_finaal),
+         steekproef_finaal = ifelse(ecoregio == "Ecoregio van de krijt-leemgebieden",
+                                    ifelse(ranking_rel_ecoregio %in% c(8,9), FALSE,
+                                           ifelse(ranking_rel_ecoregio %in% c(16,17), TRUE, steekproef_finaal)),
+                                    steekproef_finaal),
+         steekproef_finaal = ifelse(ecoregio == "Ecoregio van de zuidwestelijke heuvelzone",
+                                    ifelse(ranking_rel_ecoregio %in% c(2), FALSE,
+                                           ifelse(ranking_rel_ecoregio %in% c(19), TRUE, steekproef_finaal)),
+                                    steekproef_finaal),
+         steekproef_finaal = ifelse(ecoregio == "Ecoregio van de polders en de getijdenschelde",
+                                    ifelse(ranking_rel_ecoregio %in% c(7), FALSE,
+                                           ifelse(ranking_rel_ecoregio %in% c(18), TRUE, steekproef_finaal)),
+                                    steekproef_finaal))
+       
+```
+```{r, eval = FALSE}
+steekproefkader_select %>%
+  select(locatie, ecoregio, ranking, ranking_rel_ecoregio, type_selectie, tot_aantal, jaar_max_aanwezig, prop_leefgebied, prop_rbbmc, bron_aanwezig, locatie_inhaalslag, locatie_status, steekproef_finaal) %>%
+  st_write(dsn = "../output/meetnet_zeggekorfslak.gpkg", "steekproefkader", delete_layer = TRUE, quiet = TRUE)
+```
+
+@fig-verschil toont het verschil in de geselecteerde hokken als er gebruik gemaakt wordt van stratificatie volgens ecoregio.
+
+```{r}
+#| label: fig-verschil
+#| fig.cap: Verschl in geselecteerde hokken bij gebruik van stratificatie volgens ecoregio
+
+steekproefkader_select_verschil <- steekproefkader_select %>%
+  filter(steekproef != steekproef_finaal) %>%
+  mutate(verschil = ifelse(steekproef_finaal, "Selectie met stratificatie + manuele correctie", "Selectie zonder stratificatie")) %>%
+  select(locatie, ecoregio, ranking_rel, ranking_rel_ecoregio, verschil) %>%
+  st_centroid()
+
+steekproefkader_select_ongewijzigd <- steekproefkader_select %>%
+  filter(steekproef == steekproef_finaal) %>%
+  filter(steekproef) %>%
+  st_centroid()
+
+steekproefkader_overig <- steekproefkader_select %>%
+  filter(!steekproef) %>%
+  filter(!steekproef_finaal) %>%
+  st_centroid()
+
+steekproefkader_select_verschil %>%
+  mapView(zcol = "verschil", layer.name = "Verschil steekproef"
+          ) +
+  mapview(steekproefkader_select_ongewijzigd, layer.name = "Steekproef ongewijzigd",
+          cex = 3, col.regions = "red", alpha.regions = 0.4) +
+  mapview(steekproefkader_overig, layer.name = "Niet geselecteerd",
+          cex = 3, col.regions = "blue", alpha.regions = 0.4)
+```
 
 ```{r}
 #| label: tbl-overzicht-s
 #| tbl-cap: Aantal hokken in steekproef
 
+steekproef <- steekproefkader_select %>%
+  filter(steekproef_finaal) %>%
+  mutate(naam = ifelse(!is.na(locatie_inhaalslag), locatie_inhaalslag, locatie)) %>%
+  group_by(ecoregio) %>%
+  mutate(n_ecoregio = n(),
+         ranking_rel_ecoregio = rank(ranking),
+         panel = ifelse(ranking_rel_ecoregio <= floor((n() / 2)), 1,
+                        ifelse(ranking_rel_ecoregio > ceiling((n() / 2)), 2,
+                               NA))) %>%
+  ungroup() %>%
+  mutate(pannel_missing = is.na(panel)) %>% #indien oneven hokken in ecoregio, kan middelste hok nog niet toegevoegd worden aan panel
+  group_by(pannel_missing) %>%
+  mutate(panel_add = ceiling(rank(ranking) * 2 / n())) %>% # alle middelste hokken kennen we toe aan panel op basis van relatieve ranking
+  ungroup() %>%
+  mutate(panel = ifelse(pannel_missing, panel_add, panel)) %>%
+  arrange(ecoregio, ranking) %>%
+  select(naam, ecoregio, ranking, ranking_rel_ecoregio, panel, type_selectie, tot_aantal)
+
+check <- steekproef %>%
+  group_by(panel) %>%
+  summarise(n = n()) %>%
+  ungroup()
+
 steekproef %>%
   st_drop_geometry() %>%
-  group_by(type_selectie) %>%
+  group_by(type_selectie, ecoregio) %>%
   summarise(steekproef_n = n()) %>%
   ungroup() %>%
   kable() %>%
   kable_styling()
 ```
+```{r, eval = FALSE}
+steekproef %>%
+  st_write(dsn = "../output/meetnet_zeggekorfslak.gpkg", "steekproef", delete_layer = TRUE, quiet = TRUE)
+```
 
-@fig-steekproef toont de hokken in de steekproef.
+
+
+@fig-steekproef toont de hokken in de steekproef. 
 De figuur toont ook het potentieel leefgebied binnen de hokken van het steekproefkader.
 
 ```{r}
@@ -793,7 +935,10 @@ De figuur toont ook het potentieel leefgebied binnen de hokken van het steekproe
 #| fig.cap: Overzicht hokken steekproef
 
 steekproefkader_niet <- steekproefkader_select %>%
-  filter(!steekproef)
+  filter(!steekproef_finaal)
+
+steekproef <- steekproef %>%
+  mutate(periode = ifelse(panel == 1, "2025-2027", "2028-2030"))
 
 mapview(steekproef,
         zcol = "type_selectie",
@@ -812,4 +957,9 @@ mapview(leefgebied_steekproefkader,
         col.region = "darkgreen",
         alpha.region = 0.3)
 ```
+
+De steekproef verdelen we in 2 groepen (op basis van de relatieve ranking):
+
++ de eerste groep van 30 hokken worden in de periode 2025-2027 bemonsterd
++ de tweede groep van 30 hokken worden in de periode 2028-2030 bemonsterd
 
