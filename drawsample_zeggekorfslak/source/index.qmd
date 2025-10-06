@@ -963,3 +963,14 @@ De steekproef verdelen we in 2 groepen (op basis van de relatieve ranking):
 + de eerste groep van 30 hokken worden in de periode 2025-2027 bemonsterd
 + de tweede groep van 30 hokken worden in de periode 2028-2030 bemonsterd
 
+```{r}
+steekproef_meetnetten <- st_read(dsn = "../output/meetnet_zeggekorfslak.gpkg", "steekproef")
+
+steekproef_meetnetten <- steekproef_meetnetten %>%
+  st_transform(crs = 4326) %>%
+  select(panel, naam = naam_meetnetten)
+
+steekproef_meetnetten %>%
+  st_write("../output/add_locaties_zeggekorfslak_2025-10-02.shp")
+```
+
