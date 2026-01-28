@@ -31,7 +31,7 @@ library(n2khab)
 
 path_analysis <- fileman_up("soortenmeetnetten-analysis")
 
-source(file.path(path_analysis, "src/functions_smp.R"))
+source(file.path(path_analysis, "source/functions_smp.R"))
 ```
 # Data meetnetten.be
 

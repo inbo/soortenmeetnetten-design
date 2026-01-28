@@ -1,0 +1,165 @@
+---
+title: "Update steekproef heikikker"
+author: 
+  -
+    name: "Toon Westra"
+    email: "Toon.Westra@inbo.be"
+subtitle: "Technisch rapport"
+link-citations: TRUE
+always_allow_html: yes
+site: bookdown::bookdown_site
+output:
+  bookdown::html_document2:
+    keep_md: TRUE
+    toc: TRUE
+    code_folding: hide
+    toc_depth: 2
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(sf)
+library(n2khab)
+library(units)
+```
+
+```{r}
+
+path_analysis <- fileman_up("soortenmeetnetten-analysis")
+
+source(file.path(path_analysis, "source/functions_smp.R"))
+```
+
+
+# Data meetnetten.be
+
+```{r}
+visits <- get_visits_smp() %>%
+  filter(meetnet == "Heikikker")
+
+path <- fileman_up("soortenmeetnetten-queries")
+
+covar <- get_covariates_smp() %>%
+  filter(meetnet == "Heikikker")
+
+counts <- get_counts_smp(species_group = "amfibieën") %>%
+  filter(meetnet == "Heikikker")
+
+locations <- get_locations_smp(only_active = FALSE) %>%
+  filter(locatie_type == "locatie")  %>%
+  filter(meetnet == "Heikikker")
+
+locations %>%
+  st_write("../output/locaties_heikikker_2026.gpkg")
+  
+locatie_clusters <- locations %>%
+  st_drop_geometry() %>%
+  select(meetnet, locatie, is_active, is_sample) %>%
+  mutate(cluster = ifelse(str_detect(locatie, " - "), 
+                          str_sub(locatie,  end = str_locate(locatie, " - ")),
+                          locatie),
+         cluster = str_remove_all(cluster, str_c(as.character(c(0:9)), collapse = "|")),
+         cluster = str_remove(cluster, "NR"),
+         cluster = str_trim(cluster),
+         poel =  str_extract(locatie, str_c(str_c("(n|[:space:])", c(1:35), "([:alpha:]|$)"), collapse = "|")),
+         poel = ifelse(cluster == "Merkske",  str_sub(locatie, start = str_locate(locatie, "B")[,"start"]),
+                       poel),
+         poel = ifelse(is.na(poel), "1", poel)) 
+
+```
+
+# Steekproefkader
+
+```{r}
+sampleframe <- st_read("../data/steekproefkader_heikikker_versie2021-01-20.gpkg",
+                       layer = "steekproefkader_heikikker_meetpunten")
+
+sampleframe_overlay <- sampleframe %>%
+  st_join(locations %>%
+            st_transform(crs = 31370) %>%
+            st_buffer(dist = 1) %>%
+            select(locatie_meetnetten = locatie,
+                   is_sample,
+                   is_active)) %>%
+  mutate(in_meetnetten = !is.na(locatie_meetnetten),
+         code = str_c(volgorde_gebied, ".", volgorde_poel_ingebied)) %>%
+  group_by(meetpunt_id) %>%
+  mutate(dist_locatie_meetnetten = drop_units(min(st_distance(geom, locations %>%
+                                  st_transform(crs = 31370)))) %>%
+           round(),
+         dist_locatie_meetnetten = ifelse(in_meetnetten, dist_locatie_meetnetten, NA)) %>%
+  ungroup()
+
+nieuwe_meetnetlocaties <- locations %>%
+  select(locatie, is_active, is_sample) %>%
+  st_transform(crs = 31370) %>%
+  filter(!locatie %in% sampleframe_overlay$locatie_meetnetten) %>%
+  st_join(sampleframe %>%
+            select(grts_ranking_poel, grts_ranking_gebied, volgorde_gebied, volgorde_poel_ingebied, naam_toevoegen),
+          join = st_nearest_feature) %>%
+  group_by(locatie) %>%
+  mutate(dist_locatie_steekproefkader = drop_units(min(st_distance(geom, sampleframe))) %>%
+           round()) %>%
+  ungroup()
+
+meetnet_locaties_verplaatst <- nieuwe_meetnetlocaties %>%
+  filter(dist_locatie_steekproefkader <= 100) %>%
+  mutate(code = str_c(volgorde_gebied, ".", volgorde_poel_ingebied)) %>%
+  select(code, is_active_verplaatst = is_active, dist_locatie_meetnetten_verplaatst = dist_locatie_steekproefkader, locatie_meetnetten_verplaatst = locatie) %>%
+  st_drop_geometry()
+
+nieuwe_meetnetlocaties <- nieuwe_meetnetlocaties %>%
+  filter(dist_locatie_steekproefkader > 100)
+
+overzicht_steekproefkader <- sampleframe_overlay %>%
+  select(meetnet, meetpunt_id, code, watervlak_id, grts_ranking_poel, grts_ranking_gebied, volgorde_gebied, volgorde_poel_ingebied, n_samples_ingebied, naam_steekproefkader = naam_toevoegen, naam_meetnetten = locatie_meetnetten, in_meetnetten, is_active, dist_locatie_meetnetten) %>%
+  left_join(meetnet_locaties_verplaatst, by = "code") %>%
+  mutate(naam_meetnetten = ifelse(!is.na(locatie_meetnetten_verplaatst), locatie_meetnetten_verplaatst, naam_meetnetten),
+         dist_locatie_meetnetten = ifelse(!is.na(dist_locatie_meetnetten_verplaatst), dist_locatie_meetnetten_verplaatst, dist_locatie_meetnetten),
+         is_active = ifelse(!is.na(is_active_verplaatst), is_active_verplaatst, is_active),
+         in_meetnetten = !is.na(naam_meetnetten),
+         locatie_verplaatst = dist_locatie_meetnetten > 1) %>%
+  select(-dist_locatie_meetnetten_verplaatst, -locatie_meetnetten_verplaatst, -is_active_verplaatst)
+```
+
+# Bemonsterde locaties
+
+```{r}
+samples_2024_2025 <- read_csv("../data/poelcodes heikikker.csv")
+
+visits <- get_visits_smp() %>%
+  filter(meetnet == "Heikikker")
+
+visits_meetnetten <- visits %>%
+  group_by(locatie) %>%
+  summarise(jaren_bezoek_meetnetten = str_c(unique(year(datum)), collapse = ";")) %>%
+  ungroup() %>%
+  rename(naam_meetnetten = locatie)
+
+overzicht_steekproefkader <- overzicht_steekproefkader %>%
+  left_join(visits_meetnetten, by = "naam_meetnetten") %>%
+  mutate(bezocht_2024_2025 = code %in% samples_2024_2025$Code,
+         locaties_toevoegen = bezocht_2024_2025 & !in_meetnetten) %>%
+  group_by(grts_ranking_gebied) %>%
+  mutate(cluster_bezocht = any(bezocht_2024_2025 | !is.na(jaren_bezoek_meetnetten))) %>%
+  ungroup()
+
+st_write(overzicht_steekproefkader, 
+         "../output/steekproefkader_heikikker_versie2026-01-28.gpkg", delete_dsn = TRUE)
+
+check <- samples_2024_2025 %>%
+  filter(!Code %in% overzicht_steekproefkader$code)
+
+locaties_toevoegen <- overzicht_steekproefkader %>%
+  filter(bezocht_2024_2024, !in_meetnetten) %>%
+  select(meetnet, code, watervlak_id, volgorde_gebied, volgorde_poel_ingebied)
+
+st_write(locaties_toevoegen, 
+         "../output/heikikker_locaties_toevoegen.gpkg")
+```
+
