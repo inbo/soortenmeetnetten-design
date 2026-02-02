@@ -53,9 +53,9 @@ counts <- get_counts_smp(species_group = "amfibieën") %>%
 locations <- get_locations_smp(only_active = FALSE) %>%
   filter(locatie_type == "locatie")  %>%
   filter(meetnet == "Heikikker")
-
-locations %>%
-  st_write("../output/locaties_heikikker_2026.gpkg")
+# 
+# locations %>%
+#   st_write("../output/locaties_heikikker_2026.gpkg")
   
 locatie_clusters <- locations %>%
   st_drop_geometry() %>%
@@ -100,31 +100,62 @@ nieuwe_meetnetlocaties <- locations %>%
   st_transform(crs = 31370) %>%
   filter(!locatie %in% sampleframe_overlay$locatie_meetnetten) %>%
   st_join(sampleframe %>%
-            select(grts_ranking_poel, grts_ranking_gebied, volgorde_gebied, volgorde_poel_ingebied, naam_toevoegen),
+            select(volgorde_gebied, volgorde_poel_ingebied, naam_toevoegen),
           join = st_nearest_feature) %>%
   group_by(locatie) %>%
   mutate(dist_locatie_steekproefkader = drop_units(min(st_distance(geom, sampleframe))) %>%
            round()) %>%
-  ungroup()
+  ungroup() %>%
+  rename(naam_steekproefkader = naam_toevoegen, naam_meetnetten = locatie)
 
 meetnet_locaties_verplaatst <- nieuwe_meetnetlocaties %>%
   filter(dist_locatie_steekproefkader <= 100) %>%
-  mutate(code = str_c(volgorde_gebied, ".", volgorde_poel_ingebied)) %>%
-  select(code, is_active_verplaatst = is_active, dist_locatie_meetnetten_verplaatst = dist_locatie_steekproefkader, locatie_meetnetten_verplaatst = locatie) %>%
-  st_drop_geometry()
+  mutate(code = str_c(volgorde_gebied, ".", volgorde_poel_ingebied),
+         in_meetnetten = TRUE)
+  # select(code, is_active_verplaatst = is_active, dist_locatie_meetnetten_verplaatst = dist_locatie_steekproefkader, locatie_meetnetten_verplaatst = locatie) %>%
+  # st_drop_geometry()
 
-nieuwe_meetnetlocaties <- nieuwe_meetnetlocaties %>%
-  filter(dist_locatie_steekproefkader > 100)
+# nieuwe_meetnetlocaties <- nieuwe_meetnetlocaties %>%
+#   filter(dist_locatie_steekproefkader > 100) 
 
-overzicht_steekproefkader <- sampleframe_overlay %>%
-  select(meetnet, meetpunt_id, code, watervlak_id, grts_ranking_poel, grts_ranking_gebied, volgorde_gebied, volgorde_poel_ingebied, n_samples_ingebied, naam_steekproefkader = naam_toevoegen, naam_meetnetten = locatie_meetnetten, in_meetnetten, is_active, dist_locatie_meetnetten) %>%
-  left_join(meetnet_locaties_verplaatst, by = "code") %>%
-  mutate(naam_meetnetten = ifelse(!is.na(locatie_meetnetten_verplaatst), locatie_meetnetten_verplaatst, naam_meetnetten),
-         dist_locatie_meetnetten = ifelse(!is.na(dist_locatie_meetnetten_verplaatst), dist_locatie_meetnetten_verplaatst, dist_locatie_meetnetten),
-         is_active = ifelse(!is.na(is_active_verplaatst), is_active_verplaatst, is_active),
-         in_meetnetten = !is.na(naam_meetnetten),
-         locatie_verplaatst = dist_locatie_meetnetten > 1) %>%
-  select(-dist_locatie_meetnetten_verplaatst, -locatie_meetnetten_verplaatst, -is_active_verplaatst)
+# overzicht_steekproefkader <- sampleframe_overlay %>%
+#   select(meetnet, meetpunt_id, code, watervlak_id, grts_ranking_poel, grts_ranking_gebied, volgorde_gebied, volgorde_poel_ingebied, n_samples_ingebied, naam_steekproefkader = naam_toevoegen, naam_meetnetten = locatie_meetnetten, in_meetnetten, is_active, dist_locatie_meetnetten) %>%
+#   left_join(meetnet_locaties_verplaatst, by = "code") %>%
+#   mutate(naam_meetnetten = ifelse(!is.na(locatie_meetnetten_verplaatst), locatie_meetnetten_verplaatst, naam_meetnetten),
+#          dist_locatie_meetnetten = ifelse(!is.na(dist_locatie_meetnetten_verplaatst), dist_locatie_meetnetten_verplaatst, dist_locatie_meetnetten),
+#          is_active = ifelse(!is.na(is_active_verplaatst), is_active_verplaatst, is_active),
+#          in_meetnetten = !is.na(naam_meetnetten),
+#          locatie_verplaatst = dist_locatie_meetnetten > 1) %>%
+#   select(-dist_locatie_meetnetten_verplaatst, -locatie_meetnetten_verplaatst, -is_active_verplaatst)
+
+steekproefkader_nt_verplaatst <- sampleframe_overlay %>%
+  select(meetnet, meetpunt_id, code, watervlak_id, afstand_tot_watervlak, grts_ranking_poel, grts_ranking_gebied, volgorde_gebied, volgorde_poel_ingebied, n_samples_ingebied, naam_steekproefkader = naam_toevoegen, naam_meetnetten = locatie_meetnetten, in_meetnetten, is_active, is_sample) %>%
+  filter(!code %in% meetnet_locaties_verplaatst$code) %>%
+  mutate(locatie_verplaatst = FALSE)
+
+steekproefkader_verplaatst <- meetnet_locaties_verplaatst %>%
+  left_join(sampleframe_overlay %>%
+              select(code, meetnet, meetpunt_id,  watervlak_id, afstand_tot_watervlak, grts_ranking_poel, grts_ranking_gebied, n_samples_ingebied) %>%
+              st_drop_geometry(),
+            by = "code") %>%
+  mutate(locatie_verplaatst = TRUE)
+
+steekproefkader_nieuw <- nieuwe_meetnetlocaties %>%
+  filter(dist_locatie_steekproefkader > 100) %>%
+  select(naam_meetnetten, is_active, is_sample) %>%
+  mutate(in_meetnetten = TRUE)
+
+steekproefkader_update <- steekproefkader_nt_verplaatst %>%
+  bind_rows(steekproefkader_verplaatst) %>%
+  bind_rows(steekproefkader_nieuw) %>%
+  arrange(volgorde_gebied, volgorde_poel_ingebied)
+
+  # mutate(naam_meetnetten = ifelse(!is.na(locatie_meetnetten_verplaatst), locatie_meetnetten_verplaatst, naam_meetnetten),
+  #        dist_locatie_meetnetten = ifelse(!is.na(dist_locatie_meetnetten_verplaatst), dist_locatie_meetnetten_verplaatst, dist_locatie_meetnetten),
+  #        is_active = ifelse(!is.na(is_active_verplaatst), is_active_verplaatst, is_active),
+  #        in_meetnetten = !is.na(naam_meetnetten),
+  #        locatie_verplaatst = dist_locatie_meetnetten > 1) %>%
+  # select(-dist_locatie_meetnetten_verplaatst, -locatie_meetnetten_verplaatst, -is_active_verplaatst)
 ```
 
 # Bemonsterde locaties
@@ -141,25 +172,94 @@ visits_meetnetten <- visits %>%
   ungroup() %>%
   rename(naam_meetnetten = locatie)
 
-overzicht_steekproefkader <- overzicht_steekproefkader %>%
+steekproefkader_update <- steekproefkader_update %>%
   left_join(visits_meetnetten, by = "naam_meetnetten") %>%
-  mutate(bezocht_2024_2025 = code %in% samples_2024_2025$Code,
-         locaties_toevoegen = bezocht_2024_2025 & !in_meetnetten) %>%
+  mutate(bezocht_2024_2025 = code %in% samples_2024_2025$Code) %>%
   group_by(grts_ranking_gebied) %>%
   mutate(cluster_bezocht = any(bezocht_2024_2025 | !is.na(jaren_bezoek_meetnetten))) %>%
   ungroup()
 
-st_write(overzicht_steekproefkader, 
-         "../output/steekproefkader_heikikker_versie2026-01-28.gpkg", delete_dsn = TRUE)
+# st_write(overzicht_steekproefkader, 
+#          "../output/steekproefkader_heikikker_versie2026-01-28.gpkg", delete_dsn = TRUE)
 
 check <- samples_2024_2025 %>%
-  filter(!Code %in% overzicht_steekproefkader$code)
+  filter(!Code %in% steekproefkader_update$code)
 
-locaties_toevoegen <- overzicht_steekproefkader %>%
-  filter(bezocht_2024_2024, !in_meetnetten) %>%
+locaties_toevoegen <- steekproefkader_update %>%
+  filter(bezocht_2024_2025, !in_meetnetten) %>%
   select(meetnet, code, watervlak_id, volgorde_gebied, volgorde_poel_ingebied)
 
-st_write(locaties_toevoegen, 
-         "../output/heikikker_locaties_toevoegen.gpkg")
+# st_write(locaties_toevoegen, 
+#          "../output/heikikker_locaties_toevoegen.gpkg")
 ```
+
+# Toe te voegen locaties
+
+Naam manueel toegevoegd.
+
+```{r}
+locaties_toevoegen <- st_read("../output/heikikker_locaties_toevoegen.gpkg")
+
+# locaties_toevoegen %>%
+#   st_transform(crs = 4326) %>%
+#   rename(naam = naam_toevoegen) %>%
+#   st_write("../output/add_locations_heikikker_2026-02-02.shp", driver = "ESRI Shapefile")
+
+```
+# Overzicht alle locaties in meetnetten.be
+
+```{r}
+
+locaties_nieuw <- locaties_toevoegen %>%
+              select(meetnet, code, watervlak_id, locatie = naam_toevoegen, volgorde_gebied, volgorde_poel_ingebied) %>%
+              mutate(is_sample = TRUE,
+                     is_active = TRUE)
+
+location_all <- locations %>%
+  select(meetnet, locatie, is_active, is_sample) %>%
+  left_join(overzicht_steekproefkader %>%
+              select(code, watervlak_id, locatie = naam_meetnetten, volgorde_gebied, volgorde_poel_ingebied) %>%
+              st_drop_geometry(),
+            by = "locatie") %>%
+  st_transform(31370) %>%
+  bind_rows(locaties_nieuw) %>%
+  arrange(volgorde_gebied, volgorde_poel_ingebied)
+
+location_all %>%
+  st_write("heikikker_locaties_2026-02-02.gpkg")
+
+```
+
+
+# Update steekproefkader
+
+```{r}
+watervlakken <- read_watersurfaces()
+
+watervlakken_select <- watervlakken %>%
+  st_join(steekproefkader_update %>%
+            select(meetpunt_id) %>%
+            st_buffer(dist = 100)) %>%
+  filter(!is.na(meetpunt_id)) %>%
+  select(watervlak_id = polygon_id)
+```
+
+
+```{r}
+steekproefkader_update_namen <- steekproefkader_update %>%
+  left_join(locaties_toevoegen %>%
+              select(code, naam_toevoegen) %>%
+              st_drop_geometry(),
+            by = "code") %>%
+  mutate(naam_meetnetten = ifelse(!is.na(naam_toevoegen), naam_toevoegen, naam_meetnetten)) %>%
+  select(-naam_toevoegen) %>%
+  select(-watervlak_id, -afstand_tot_watervlak) %>%
+  st_join(watervlakken_select, join = st_nearest_feature) %>%
+  group_by(meetpunt_id) %>%
+  mutate(afstand_watervlak = drop_units(min(st_distance(geom, watervlakken_select)))) %>%
+  ungroup() %>%
+  mutate(watervlak_id = ifelse(afstand_watervlak > 100, NA, watervlak_id),
+         afstand_watervlak = ifelse(afstand_watervlak > 100, NA, round(afstand_watervlak)))
+```
+
 
