@@ -23,6 +23,7 @@ library(rgdal)
 library(rgeos)
 library(sf)
 library(tidyverse)
+library(n2khab)
 
 doel.crs <- "+init=epsg:31370"
 ```
