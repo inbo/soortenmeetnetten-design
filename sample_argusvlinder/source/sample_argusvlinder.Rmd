@@ -160,6 +160,9 @@ locaties_add <- locaties_nieuw %>%
   bind_rows(locatie_lissewege_oost) %>%
   select(locatie) %>%
   rename(naam = locatie)
+
+locaties_add %>%
+  st_write("../output/argusvlinder_add_2025-04-14.shp")
 ```
 
 Op basis van recente waarnemingen voegen we 3 bijkomende nieuwe locaties toe aan het meetnet:
@@ -183,5 +186,6 @@ locaties_add %>%
 
 In totaal hebben we nu 31 meetnetlocaties.
 Een steekproeftrekking is dus niet meer aan de orde.
+We volgen alle locaties op in een 3-jarige meetcyclus.
 
 
