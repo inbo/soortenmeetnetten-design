@@ -1,0 +1,111 @@
+project:
+  type: book
+  preview:
+    port: 4201
+    browser: true
+  render:
+  - '*.md'
+  - '*.qmd'
+  - '!LICENSE.md'
+  - '!README.md'
+  output-dir: output
+  post-render: _extensions/inbo/flandersqmd-book/filters/post_render.R
+execute:
+  echo: false
+  warnings: false
+  errors: false
+  message: false
+  freeze: true
+  cache: false
+format:
+  flandersqmd-book-html: default
+  flandersqmd-book-pdf: default
+lang: nl-BE
+flandersqmd:
+  entity: INBO
+  level: 2
+  title: Monitoringsprotocol Nauwe korfslak en Zeggekorfslak
+  subtitle: Versie 2.0
+  shorttitle: monitoringsprotocol-korfslakken
+  author:
+  - name:
+      given: Toon
+      family: Westra
+    email: toon.westra@inbo.be
+    orcid: 0000-0003-2478-9459
+    affiliation:
+    - Instituut voor Natuur- en Bosonderzoek (INBO)
+    corresponding: true
+  - name:
+      given: Sam
+      family: Van de Poel
+    email: sam.vandepoel@natuurpunt.be
+    affiliation:
+    - Natuurpunt Studie
+  - name:
+      given: Jo
+      family: Packet
+    orcid: 0000-0001-5590-323X
+    affiliation:
+    - Instituut voor Natuur- en Bosonderzoek (INBO)
+  - name:
+      given: Sam
+      family: Provoost
+    orcid: 0000-0003-2751-5269
+    affiliation:
+    - Instituut voor Natuur- en Bosonderzoek (INBO)
+  - name:
+      given: Ward
+      family: Langeraert
+    orcid: 0000-0002-5900-8109
+    affiliation:
+    - Instituut voor Natuur- en Bosonderzoek (INBO)
+  reviewer:
+  - name:
+      given: Stijn
+      family: Van Onsem
+    email: stijn.vanonsem@inbo.be
+    orcid: 0000-0003-4298-7731
+    affiliation:
+    - Instituut voor Natuur- en Bosonderzoek (INBO)
+  rightsholder:
+  - name:
+      given: Instituut voor Natuur- en Bosonderzoek (INBO)
+    email: info@inbo.be
+    ror: 00j54wy13
+  funder:
+  - name:
+      given: Instituut voor Natuur- en Bosonderzoek (INBO)
+    email: info@inbo.be
+    ror: 00j54wy13
+  community: inbo
+  public_report: true
+  colophon: true
+  floatbarrier: section
+book:
+  downloads: pdf
+  open-graph: true
+  body-footer: '{{< footer >}}'
+  navbar:
+    pinned: true
+    right:
+    - icon: mastodon
+      href: https://mastodon.online/&#64;inbo
+    - icon: facebook
+      href: https://www.facebook.com/INBOVlaanderen/
+    left:
+    - text: Cover
+      file: index.md
+    - text: Aanbevelingen
+      file: aanbevelingen.md
+    - text: Inleiding
+      file: inleiding.md
+  chapters:
+  - index.md
+  - abstract.md
+  - aanbevelingen.md
+  - inleiding.md
+  - zeggekorfslak.qmd
+  - nauwe_korfslak.qmd
+  - referenties.md
+bibliography: references.bib

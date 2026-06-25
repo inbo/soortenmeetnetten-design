@@ -1,0 +1,1137 @@
+# Zeggekorfslak
+
+```{r}
+#| label: setup  
+#| include: false
+
+library(knitr)
+library(tidyverse)
+library(INBOtheme)
+library(sf)
+library(leaflet)
+library(DT)
+library(units)
+library(n2khab)
+library(inbodb)
+library(git2rdata)
+library(grtsdb)
+library(kableExtra)
+library(units)
+
+conflicted::conflicts_prefer(dplyr::filter)
+
+```
+
+```{r}
+#| label: read-data-meetnetten
+#| warning: false
+#| message: false 
+
+counts_mn <- read_csv2("data/zeggekorfslak/aantallen_zeggekorfslak_2025-08-26.csv")
+
+visits_mn <- read_csv2("data/zeggekorfslak/bezoeken_zeggekorfslak_2025-09-01.csv")
+
+locaties_mn <- st_read("data/zeggekorfslak/locaties_zeggekorfslak_2025-09-01.gpkg", quiet = TRUE)
+
+data_mn <- visits_mn %>%
+  select(scheme, visit_id, location, bezoek_status = visit_status, start_date, opmerking = notes) %>%
+  left_join(select(counts_mn, visit_id, sample_id, count, life_stage, x, y), by = c("visit_id")) %>%
+  mutate(jaar = year(start_date),
+         id = str_c("mn_", sample_id)) %>%
+  select(id, soort = scheme, jaar, datum = start_date, locatie = location, bezoek_status, opmerking, aantal = count, kleed = life_stage, x, y) %>%
+  mutate(nieuwe_locatie = FALSE,
+         bron = "meetnetten.be",
+         validatie = "goedgekeurd")
+
+data_mn_union <- data_mn %>%
+  filter(!is.na(x)) %>%
+  st_as_sf(coords = c("x", "y"), crs = 4326) %>%
+  st_transform(31370) %>%
+  group_by(soort) %>%
+  summarise(n = n()) %>%
+  ungroup()
+```
+
+```{r}
+#| label: read-data-waarnemingen
+#| warning: false
+#| message: false 
+
+data_wnm <- read_csv2("data/zeggekorfslak/INBODATAVR-439_zegge-korfslak_wbe_VL_DumpTem20250831.csv") %>%
+  mutate(id = str_c("wnm_", wn_id),
+         soort = "Zeggekorfslak",
+         datum = as.Date(datum, format = "%d/%m/%Y"),
+         jaar = year(datum),
+         validatie = ifelse(str_detect(status, "Goedgekeurd"), "goedgekeurd", "onbehandeld")
+         ) %>%
+  st_as_sf(coords = c("x", "y"), crs = 31370, remove = FALSE) %>%
+  st_join(select(st_transform(locaties_mn, crs = 31370), locatie = location)) %>%
+  select(id, soort, jaar, datum, locatie, aantal, kleed, x, y, gebied, validatie) %>%
+  mutate(nieuwe_locatie = is.na(locatie),
+         locatie = ifelse(is.na(locatie),
+                          ifelse(gebied != "" & !is.na(gebied), gebied, str_c("nieuw_", id)),
+                          locatie)) %>%
+  select(-gebied) %>%
+  mutate(bron = "waarnemingen.be") %>%
+  st_drop_geometry()
+
+data_wnm_remove <- data_wnm %>%
+  st_as_sf(coords = c("x", "y"), crs = 31370) %>%
+  mutate(distance_mn = drop_units(st_distance(geometry, data_mn_union))) %>%
+  semi_join(data_mn, by = c("locatie", "datum")) %>%
+  filter(distance_mn < 100)
+
+data_wnm <- data_wnm  %>%
+  anti_join(data_wnm_remove, by = "id") %>%
+  filter(kleed != "lege schelp of losse klep") %>%
+  group_by(bron, soort, id,  jaar, datum, locatie, nieuwe_locatie, x, y, validatie) %>%
+  summarise(aantal = sum(aantal)) %>%
+  ungroup()
+
+check <- data_wnm %>%
+  group_by(id) %>%
+  filter(n() > 1)
+  
+```
+
+```{r}
+#| label: combine-all-data
+#| warning: false
+#| message: false 
+
+data_all <- data_mn %>%
+  bind_rows(data_wnm)
+
+data_all_sf <- data_mn %>%
+  filter(!is.na(x)) %>%
+  st_as_sf(coords = c("x", "y"), crs = 4326) %>%
+  st_transform(31370) %>% 
+  bind_rows(data_wnm %>%
+              st_as_sf(coords = c("x", "y"), crs = 31370))
+
+verspreiding <- data_all_sf %>%
+  st_drop_geometry() %>%
+  mutate(x = st_coordinates(data_all_sf)[,1],
+         y = st_coordinates(data_all_sf)[,2]) %>%
+  group_by(id, bron, soort, locatie, aantal, jaar, x, y) %>%
+  summarise(aantal = sum(aantal)) %>%
+  ungroup()
+
+aanwezig <- verspreiding %>%
+  filter(aantal > 0) %>%
+  st_as_sf(coords = c("x", "y"), crs = 31370)
+theme_set(theme_bw())
+flanders <- read_admin_areas(dsn = "provinces")
+
+status_locatie <- data_all %>%
+  group_by(soort, locatie, nieuwe_locatie) %>%
+  arrange(jaar, bron, validatie) %>%
+  summarise(aantal_individuen_goedgekeurd = sum(aantal * (validatie == "goedgekeurd")),
+            aantal_individuen_niet_beoordeeld = sum(aantal * (validatie == "niet beoordeeld")),
+            aantal_bezoeken = n_distinct(datum, locatie),
+            n_punten = n(),
+            locatie_status = ifelse("Geen veldwerk mogelijk - locatie ongeschikt" %in% bezoek_status, "locatie ongeschikt",
+                            ifelse("Geen veldwerk mogelijk - locatie ontoegankelijk" %in% bezoek_status, "locatie ontoegankelijk", "locatie bezocht")),
+            bron = str_c(unique(bron), collapse = "; "),
+            jaar_min = min(jaar),
+            jaar_max = max(jaar),
+            jaar = str_c(unique(jaar), collapse = "; "),
+            validatie = sum(validatie == "goedgekeurd") > 0 ) %>%
+  ungroup() %>%
+  mutate(validatie = ifelse(validatie, "goedgekeurd", "niet beoordeeld")) %>%
+  mutate(locatie_status = ifelse(locatie_status != "locatie bezocht", locatie_status,
+                                 ifelse(aantal_individuen_goedgekeurd > 0, "aanwezig goedgekeurd",
+                                        ifelse(aantal_individuen_niet_beoordeeld > 0, "aanwezig niet beoordeeld",
+                                               ifelse(n_punten >= 5, "afwezig", "onvoldoende onderzocht")))))
+
+status_locatie_sf <- locaties_mn %>%
+  select(locatie = location, is_active) %>%
+  left_join(select(status_locatie, locatie, locatie_status), by = "locatie") %>%
+  mutate(locatie_status = ifelse(is.na(locatie_status), "niet onderzocht", locatie_status),
+         #expert beoordeling dat locatie voldoende werd onderzocht: locatie wordt op incatief gezet
+         locatie_status = ifelse(locatie_status == "onvoldoende onderzocht" & !is_active, "afwezig", locatie_status)) %>%
+  st_transform(crs = 31370)
+
+status_locatie_point <- status_locatie_sf %>%
+  st_point_on_surface()
+
+status_locatie_tbl <- status_locatie_sf %>%
+  st_drop_geometry() %>%
+  group_by(locatie_status) %>%
+  summarise(n = n()) %>%
+  ungroup()
+
+```
+
+## Resultaten van de inhaalslag {#sec-inhaalslag}
+
+Op basis van de kaart met het potentieel leefgebied werden er in @packet_2018 261 gebieden afgebakend waar Zeggekorfslak nog niet werd waargenomen, maar potentieel wel zou kunnen voorkomen.
+In de eerste jaren van de inhaalslag stelden we vast dat de trefkans in de geselecteerde gebieden zeer laag was.
+Daarom maakten we een prioritering van de gebieden op basis van de oppervlakte aan grote zeggevegetaties binnen elk gebied.
+Grote zeggevegetaties is het deel van het potentieel leefgebied waar de kans het grootst is om Zeggekorfslak aan te treffen.
+
+In een latere fase werden ook nog gebieden toegevoegd aan de inhaalslag waar de soort in het verleden werd waargenomen, maar niet meer in de laatste 6 jaar.
+Voor die gebieden wilden we nagaan of de soort actueel nog aanwezig is.
+
+In @tbl-inhaalslag en @fig-inhaalslag geven we een overzicht van de resultaten van de inhaalslag aan de hand van volgende categorieën:
+
+- aanwezig goedgekeurd: de Zeggekorfslak werd waargenomen en een soortenexpert heeft de waarnemingen gevalideerd;
+- afwezig: de Zeggekorfslak werd niet waargenomen en er werd op minstens 5 locaties in het gebied gezocht;
+- locatie ongeschikt: het gebied bevat geen geschikt potentieel leefgebied van de Zeggekorfslak;
+- locatie ontoegankelijk: geen toestemming om het gebied te betreden of niet mogelijk om het gebied op een veilige manier te onderzoeken;
+- niet onderzocht: het gebied werd niet onderzocht.
+
+```{r}
+#| label: tbl-inhaalslag
+#| tbl-cap: "Status van de gebieden in de inhaalslag van Zeggekorfslak"
+
+status_locatie_tbl %>%
+  rename("Status gebied inhaalslag" = locatie_status, "Aantal gebieden" = n) %>%
+  kbl(booktabs = TRUE) %>%
+  kable_styling(full_width = FALSE)
+```
+
+```{r}
+#| label: fig-inhaalslag
+#| fig-cap: Resultaten inhaalslag
+
+status_locatie_point <- status_locatie_point %>%
+  mutate(show_facet = ifelse(locatie_status == "niet onderzocht", "Niet bezocht", "Bezocht"))
+
+ggplot() +
+  geom_sf(data = flanders, colour = "grey", alpha = 0.02) +
+  geom_sf(data = status_locatie_point, 
+          aes(colour = locatie_status, shape = locatie_status), size = 3, alpha = 0.6) +
+  facet_wrap(~show_facet, ncol = 1) +
+  labs(colour = "Status locatie inhaalslag",
+       shape = "Status locatie inhaalslag")
+
+```
+Hoewel er een groot aantal gebieden nog niet werden onderzocht, besloten we in 2025 om de inhaalslag als afgerond te beschouwen.
+De meeste kansrijke gebieden werden onderzocht en zelfs daar werd maar in ongeveer 1/3de van de gebieden Zeggekorfslak aangetroffen.
+We gaan er dus van uit dat de kans relatief klein is dat de soort aanwezig is in de nog niet onderzochte gebieden. 
+
+## Meetnet
+
+### Veldprotocol
+
+#### Algemeen
+
+Binnen de steekproefeenheid (een 250 m op 250 m hok) wordt op 5 kansrijke locaties gezocht naar zeggekorfslak.
+De kansrijke locatie wordt door de meetnetvrijwilliger zelf bepaald.
+Op dit punt wordt er gedurende 30 minuten visueel gezocht naar de zeggekorfslak in een straal van 5 meter (bij benadering).
+In het hok spendeert men dus strikt 2,5 uur naar het zoeken van Zeggekorfslak.
+Het moet mogelijk zijn om inclusief verplaatsingstijd een hok in ongeveer 3 uur te voltooien.
+Op deze manier kunnen er op 1 dag twee hokken worden onderzocht.
+Binnen het halfuur wordt enkel visueel gezocht op de aanwezige vegetatie.
+Optioneel is het toegelaten om buiten het halfuur ook de strooisellaag, steekproefsgewijs, ter plekke te zeven.
+Wanneer ook voor deze methode wordt gekozen heeft men tijdens het veldwerk ook zeef en sorteerbakken nodig.
+De zeefgegevens worden apart genoteerd.
+
+####	Benodigde materiaal
+
+Volgend materiaal is noodzakelijk voor het bemonsteren van een 250 m x 250 m hok:
+ 
+-   kaart met localisatie van het hok en ligging van het potentieel leefgebied binnen de steekproefeenheid; 
+-   smartphone met Meetnetten.be (Zostera) applicatie en fotoapp;
+-   loepe (min. 10x vergroting); 
+-   potjes/proefbuisjes;
+-   stift, potlood;
+-   tabelletje op papier om te turven/notitieboekje;
+-   laarzen, lieslaarzen of waadpak.
+
+Volgend materiaal is optioneel:
+
+-   grove zeef (2 mm);
+-   fijne zeef (0,5 mm), belangrijkste voor het zoeken van korfslakken;
+-   witte sorteerbak (bv. grote ijsdoos); 
+-   (zachte) pincet.
+
+#### Voorbereidende handelingen 
+
+Het te bezoeken hok dient vooraf bekeken te worden in functie van toegankelijkheid en de praktische aspecten van de bemonstering.
+
+Met volgende zaken moet rekening gehouden worden:
+
+-   Bemonstering is beperkt binnen het hok van 250 m op 250 m.
+-   Indien het terrein niet vrij toegankelijk is, dient toestemming te worden gevraagd. 
+-   Vooraf kunnen mogelijke routes door het gebied best bekeken worden.
+Hierbij kunnen veelbelovende locaties aangeduid worden (bv. a.d.h.v. van leefgebiedenkaart).
+De leefgebiedenkaart is een hulpmiddel maar het is aan de medewerker om te bepalen wat de meest kansrijke bemonsteringslocaties zijn.
+De locaties worden pas op het veld het best definitief vastgelegd en kunnen gelegen zijn buiten potentieel leefgebied.
+-   Schat de omstandigheden goed in: zijn laarzen voldoende of heb ik lieslaarzen nodig? 
+
+#### Timing bemonstering
+
+De bemonstering dient zich in de volgende periodes te situeren: 
+
+-   maart – april
+-   oktober - november
+
+Deze periodes worden als optimaal beschouwd, gezien dan de meeste kans bestaat op vochtige omstandigheden (hoger waterpeil) met minimale kans op vorst. 
+Bij herhaling van de monitoring in een hok dient steeds in dezelfde periode gezocht te worden als de vorige bemonstering
+
+#### Bemonstering op locatie
+
+GSM: aanzetten voor registratie (meetnetten.be). 
+
+Binnen de tijdsduur van maximaal 3 uur: 
+
+-   Je bezoekt 5 kansrijke puntlocaties die verspreid in het hok liggen;
+-   Kansrijke locaties zijn vooral vochtige grote zeggenvegetaties en bijkomend andere grasachtige moerasplanten (liesgras, rietgras, gele lis, riet …).
+Deze kunnen lineair aanwezig zijn langs sloten of plassen, of grotere vegetaties vormen in een gradiënt van open gebieden (moerassen, graslanden,…) naar gesloten biotopen (bossen).
+-   Op elke puntlocatie onderzoek je grondig gedurende een half uur.
+Doorzoek hierbij de vegetatie waarbij zowel gekeken wordt op levende planten als verdorde bladeren van grote zegges of andere moerasplanten.
+Dit gebeurt in de onmiddellijke omgeving van het punt waarbij een denkbeeldige cirkel van 10 meter diameter of straal 5 meter wordt gehanteerd.
+Wanneer de geschikte vegetaties zich eerder lijnvormig voordoen wordt aanbevolen om ongeveer 80 m² geschikte vegetatie te onderzoeken;
+-   Verlies geen tijd door op weg naar de verschillende punten, verspreid in het hok, te zoeken naar Zeggekorfslak, tenzij je deze locatie als zeer kansrijk beschouwt.
+In dit geval registreer je deze als een bemonsteringspunt.
+Het is de bedoeling dat de bemonsterde punten min of meer verspreid in het hok liggen, zeker als er voldoende kansrijke locaties aanwezig zijn (zie onderstaande figuur).
+Indien er weinig volodoende kansrijke locaties voorhanden zijn is het mogelijk om de 5 punten dichter bij elkaar te leggen. 
+
+Bemonsteren van een kansrijke puntlocatie houdt minstens een visuele inspectie in: 
+
+-   Neem eerst een overzichtsfoto van het bemonsteringspunt. voor je de vegetatie doorzoekt.
+-   Stel je klok in en laat een alarm afgaan na 30 minuten;
+-   Op de locatie zoek je naar zeggekorfslakken in een straal van 5 meter (bij lijnvormige vegetaties: 80 m²) en binnen de tijdlimiet.
+Dit doe je vooral door de planten, bij voorkeur grote zegges, plant na plant af te speuren.
+Bekijk hiervoor vooral de bovenkant van bladeren en nabij het tongetje.
+Neem hiervoor het blad vast en trek het blad wat los van de plant. Bekijk ook verdorde balderen en stengels aan de basis van planten.
+-   Check bij minstens 1 dier per plant of het de zeggekorfslak is met een loep.
+-   Turf het aantal gevonden zeggekorfslakken.
+Onderscheidt volwassen en juveniele levende dieren, lege huisjes en (sub)fossiele huisjes.
+Je noteert enkel het aantal gevonden slakken binnen de tijdslimiet.
+Ook al kan het tellen van grote aantallen zeggekorfslakken veel tijd innemen, de tijdslimiet moet worden gerespecteerd en gaat boven het doorzoeken van het volledige bemonsteringspunt.
+Aantallen worden niet geëxtrapoleerd in functie van niet onderzochte oppervlakte.
+-   Zorg ervoor, indien mogelijk, dat je binnen het halfuur het bemonsteringspunt goed hebt doorzocht.
+In het geval dat het tellen van de slakken veel tijd in beslag neemt (bv. honderden ex.) primeert altijd de tijdslimiet en worden de aantallen niet geëxtrapoleerd.
+-   Na het afgaan van het alarm voer je alle waarnemingen in op meetnetten.be (zie verder);
+
+Bij uitvoeren van zeefstalen (optioneel en na het halfuur visuele inspectie):
+
+-   Het is aan de vrijwilliger om te bepalen of er zeefmonsters worden genomen en op hoeveel punten dit gebeurt.
+Er kan bijvoorbeeld op één van de vijf onderzochte locaties een zeefactie ondernomen worden of op alle vijf.
+-   Verzamel binnen de straal van 5 meter (bij lijnvormige vegetaties: 80 m²) strooisel in de sorteerbak.
+Verzamel niet te veel zodat de sorteeerbak niet vol ligt;
+-   Het grove materiaal (bv. droge bladeren) mag verkruimeld worden om eventueel daarop aanwezige slakken los te maken.
+Dit materiaal kan ook best visueel nagekeken worden op vastklevende korfslakken, waarna het kan verwijderd worden uit de sorteerbak.
+Beperk hier de zoektijd;
+-   Het overgebleven materiaal wordt eerst gezeefd op een zeef van 2 mm.
+Het materiaal kleiner dan 2 mm wordt in de sorteerbak opgevangen.
+Het materiaal dat in de zeef achterblijft wordt in de zeef visueel kort nagekeken op de aanwezigheid van korfslakken.
+Beperk de zoektijd, korfslakken bevinden zich overwegend in volgende fractie;
+-   Het materiaal in de sorteerbak wordt gezeefd over een zeef van 0,5 mm.
+Het materiaal dat door de zeef valt mag op de locatie achterblijven. Het gezeefde materiaal wordt in de sorteerbak verspreid;
+-   Onderzoek het materiaal in de sorteerbak grondig door systematisch het materiaal met een pincet aan de kant de duwen.
+In dit materiaal heb je de grootste kans op het vinden van korfslakken.
+Neem de tijd om de volledige bak te doorzoeken.
+Wanneer de sorteerbak 1x grondig is doorzocht stopt het zoeken.
+Houd de gevonden slakken bij in een potje om ze daarna te goed te kunnen tellen;
+-   Voltooi de registratie op Meetnetten.be.
+Daarna kunnen de slakken terug op de locatie achtergelaten worden.
+
+### Selectie steekproeflocaties
+
+#### Steekproefkader
+
+Om een steekproeftrekking te kunnen uitvoeren, moeten we eerst een steekproefkader opmaken.
+Een steekproefkader is een lijst van alle steekproefeenheden die tot de doelpopulatie behoren.
+Als steekproefeenheid gebruiken we een hok van 250 op 250 meter.
+Om te bepalen welke steekproefeenheden tot het steekproefkader behoren, gebruiken we verspreidingsgegevens van Zeggekorfslak en gegevens over het potentieel leefgebied van de Zeggekorfslak.
+
+**Verspreidingsdata**
+
+De verspreidingsdata van de Zeggekorfslak waar we gebruik van maken zijn:
+
+-   de gegevens ingezameld in de periode 2018 - 2024 via de inhaalslag [@sec-inhaalslag] en ingevoerd in [meetnetten.be](www.meetnetten.be),
+-   alle losse waarnemingen ingevoerd in [waarnemingen.be](www.waarnemingen.be) in de periode 2005 - 2025.
+
+@fig-all-data geeft een overzicht van de (punt)locaties waar zeggekorfslak werd waargenomen in de periode 2005 - 2025.
+
+```{r}
+#| label: fig-all-data
+#| fig-cap: Overzicht waarnemingen zeggekorfslak
+
+ggplot() +
+  geom_sf(data = flanders, colour = "grey", alpha = 0.02) +
+  geom_sf(data = aanwezig, alpha = 0.6, size = 3)
+
+```
+
+```{r}
+#| label: write-all-data
+#| eval: FALSE  
+
+data_all %>%
+  st_write("../output/data_zeggekorfslak.gpkg")
+```
+
+**Potentieel leefgebied**
+
+@packet_2018 definiëren het potentieel leefgebied als volgt:
+
+-   selectie van polygonen in de Biologische Waarderingskaart (BWK) [@de_saeger_2023] met een van volgende BWK-codes:
+    -   `mc` (Grote zeggenvegetaties)
+    -   `mr` (Rietland)
+    -   `vn` (Nitrofiel alluviaal elzenbos)
+    -   `vm` (Elzenbroek)
+    -   `md` (Drijfzoom en/of drijftil)
+    -   `hfc` (Moerasspirearuigte)
+-   selectie van polygonen
+    -   met een van volgende BWK-codes:
+        -   `mk` (Alkalisch laagveen)
+        -   `mp` (Duinpanvegetaties)
+        -   `sf` (Vochtig wilgenstruweel op voedselrijke bodem)
+        -   `va` (Alluviaal elzen-essenbos)
+        -   `vc`(Bronbos)
+        -   `hc` (Dotterbloemgrasland)
+    -   EN gelegen op een afstand van maximaal 100 meter van een een polygoon met `mc` (Grote zeggenvegetaties)
+
+```{r}
+#| label: define-potential-habitat
+
+bwk_code_grote_zegge <- "^mc$"
+
+bwk_codes_leefgebied_strikt <- c("^mc$|^mr$|^vn$|^vm$|^md$|^hfc$")
+bwk_codes_leefgebied_extra <- c("^mk$|^mp$|^sf$|^va$|^vc$|^hc$")
+
+bwk_codes_leefgebied_ruim <- c("mc|mr|vn|vm|md|hfc")
+bwk_codes_leefgebied_extra_ruim <- c("mk|mp|sf|va|vc|hc")
+
+bwk_codes_leefgebied_variant <- c("mc|^vm$|^md$|^hfc$")
+bwk_codes_leefgebied_variant_extra <- c("^mk$|^mp$|^sf$|^va$|^vc$|^hc$|^mr$|^vn$")
+```
+
+Op basis van de [BWK (versie 2023)](https://zenodo.org/records/10353508) maken we een kaart van het potentieel leefgebied, door te selecteren op bovenstaande codes, inclusief de verschillende varianten op de codes (bv. naast `mr` ook `k(mr)`, `mrb°`, enz...).
+@tbl-bwk-pothab geeft een overzicht van alle BWK-codes die geselecteerd worden als we het potentieel leefgebied op die manier afleiden, en toont ook de oppervlakte van de polygonen per BWK-code.
+
+```{r}
+#| label: potential-habitatmap
+#| eval: false
+
+n2khab_path <- fileman_up("n2khab_data")
+
+habitatmap <- read_habitatmap(file = file.path(n2khab_path, "10_raw/_versions/habitatmap/habitatmap_2023"))
+
+leefgebied_basis_ruim <- habitatmap %>%
+  filter(str_detect(bwk_label, bwk_codes_leefgebied_ruim))
+
+mc_ruim <- habitatmap %>%
+  filter(str_detect(bwk_label, "mc")) %>%
+  mutate(type_leefgebied = "mc_ruim")
+
+mc_ruim_union <-  mc_ruim %>%
+  group_by(type_leefgebied) %>%
+  summarise(n_pol = n()) %>%
+  ungroup()
+
+leefgebied_extra_ruim <- habitatmap %>%
+  filter(str_detect(bwk_label, bwk_codes_leefgebied_extra_ruim)) %>%
+  mutate(distance_to_mc = drop_units(st_distance(geometry, mc_ruim_union))) %>%
+  filter(distance_to_mc <= 100) %>%
+  filter(!polygon_id %in% leefgebied_basis_ruim$polygon_id)
+
+leefgebied_ruim <- bind_rows(leefgebied_basis_ruim,
+                             leefgebied_extra_ruim) %>%
+  mutate(type_leefgebied = "ruim")
+
+leefgebied_ruim %>%
+  st_write("data/zeggekorfslak/leefgebied_zeggekorfslak.gpkg", "leefgebied_ruim")
+
+rm(habitatmap)
+```
+
+```{r}
+#| label: read-potential-habitatmap
+#| warning: false
+#| message: false 
+
+leefgebied_ruim <- st_read("data/zeggekorfslak/leefgebied_zeggekorfslak.gpkg", "leefgebied_ruim", quiet = TRUE)
+
+leefgebied_ruim_union <-  leefgebied_ruim %>%
+  group_by(type_leefgebied) %>%
+  summarise(n_pol = n()) %>%
+  ungroup()
+```
+
+```{r}
+#| label: tbl-bwk-pothab
+#| tbl-cap: Overzicht BWK-codes die deel uitmaken van potentieel leefgebied Zeggekorfslak
+#| warning: false
+#| message: false 
+
+overzicht_codes <- leefgebied_ruim %>%
+  st_drop_geometry() %>%
+  separate_rows(bwk_label, sep = " \\+ ") %>%
+  select(polygon_id, bwk_label, area_m2) %>%
+  filter(str_detect(bwk_label, bwk_codes_leefgebied_ruim) |
+           str_detect(bwk_label, bwk_codes_leefgebied_extra_ruim)) %>%
+  mutate(code_leefgebied_strikt = str_extract(bwk_label, str_c(bwk_codes_leefgebied_ruim, bwk_codes_leefgebied_extra_ruim, sep = "|"))) %>%
+  group_by(code_leefgebied_strikt, bwk_label) %>%
+  summarise(n = n(),
+            opp_ha = round(sum(area_m2)/10000, 1)) %>%
+  arrange(desc(n)) %>%
+  ungroup() %>%
+  arrange(code_leefgebied_strikt)
+
+if (is_html_output()) {
+  
+  overzicht_codes <- overzicht_codes %>%
+    mutate(bwk_label = str_replace(bwk_label,  "\\*", "\\\\*"))
+  
+}
+
+  overzicht_codes %>%
+    group_by(code_leefgebied_strikt) %>%
+    summarise(bwk_codes = str_c(str_c(bwk_label, " (", opp_ha, " ha)"), collapse = "; ")) %>%
+    select("BWK-code hoofdgroep" = code_leefgebied_strikt, "Geselecteerde codes uit BWK en oppervlakte" = bwk_codes) %>%
+    kbl(booktabs = TRUE) %>%
+    kable_styling(font_size = 8) %>%
+    column_spec(1, width = "3cm") %>%
+    column_spec(2, width = "12cm")
+```
+
+Na evaluatie van @tbl-bwk-pothab op basis van expertkennis verfijnen we de afbakening van het leefgebied als volgt:
+
+-   enkel voor `mc` (Grote zeggenvegetaties) selecteren we alle varianten en combinaties uit de tweede kolom, voor de overige codes selecteren we enkel de 'zuivere' variant uit de eerste kolom;
+-   `mr` (Rietland) en `vn` (Nitrofiel alluviaal elzenbos) selecteren we enkel als die gelegen zijn binnen een afstand van 100 meter tot een polygoon met `mc` (of een variant die mc bevat).
+
+```{r}
+#| label: potentieel-leefgebied-variant
+#| eval: false
+
+n2khab_path <- fileman_up("n2khab_data")
+
+habitatmap <- read_habitatmap(file = file.path(n2khab_path, "10_raw/_versions/habitatmap/habitatmap_2023/habitatmap.gpkg"))
+
+selectie_leefgebied_variant_basis <- leefgebied_basis_ruim %>%
+  st_drop_geometry() %>%
+  separate_rows(bwk_label, sep =  " \\+ ") %>%
+  filter(str_detect(bwk_label, bwk_codes_leefgebied_variant)) %>%
+  select(polygon_id, bwk_label)
+
+leefgebied_variant_basis <- habitatmap %>%
+  filter(polygon_id %in% selectie_leefgebied_variant_basis$polygon_id)
+
+selectie_leefgebied_variant_extra <- habitatmap %>%
+  st_drop_geometry() %>%
+  separate_rows(bwk_label, sep =  " \\+ ") %>%
+  filter(str_detect(bwk_label, bwk_codes_leefgebied_variant_extra)) %>%
+  select(polygon_id, bwk_label)
+
+leefgebied_variant_extra <- habitatmap %>%
+  filter(polygon_id %in% selectie_leefgebied_variant_extra$polygon_id) %>%
+  filter(!polygon_id %in% leefgebied_variant_basis$polygon_id) %>%
+  mutate(distance_to_mc = drop_units(st_distance(geometry, mc_ruim_union))) %>%
+  filter(distance_to_mc <= 100)
+
+leefgebied_variant <- bind_rows(leefgebied_variant_basis,
+                                   leefgebied_variant_extra) %>%
+  mutate(type_leefgebied = "basis + extra variant")
+
+st_write(leefgebied_variant, "../data/zeggekorfslak/leefgebied_zeggekorfslak.gpkg", "leefgebied_variant")
+
+rm(habitatmap)
+```
+
+```{r}
+#| label: read-potentieel-leefgebied-variant
+
+leefgebied_variant <- st_read("data/zeggekorfslak/leefgebied_zeggekorfslak.gpkg", "leefgebied_variant", quiet = TRUE)
+
+leefgebied_variant_union <-  leefgebied_variant %>%
+  group_by(type_leefgebied) %>%
+  summarise(n_pol = n()) %>%
+  ungroup()
+```
+
+We maken ook een aparte ruimtelijke laag aan met de Regionaal Belangrijke Biotoop (RBB) Grote zeggevegetaties (rbbmc).
+Deze laag maken we aan op basis van [`habitatmap_stdized` (versie 2023_v1)](https://zenodo.org/records/13865531) [@westra_2024], de gestandaardiseerde versie van de Habitatkaart [@de_saeger_2023].
+
+
+```{r}
+#| label: potentieel-leefgebied-rbbmc
+#| eval: true
+
+n2khab_path <- fileman_up("n2khab_data")
+
+habitatmap_stdized <- read_habitatmap_stdized(file = file.path(n2khab_path, "20_processed/_versions/habitatmap_stdized/habitatmap_stdized_2023_v1/habitatmap_stdized.gpkg"),
+                                              version = "habitatmap_stdized_2023_v1")
+
+habitatmap_rbbmc <- habitatmap_stdized$habitatmap_types %>%
+  filter(type == "rbbmc") 
+
+leefgebied_rbbmc <- habitatmap_stdized$habitatmap_polygons %>%
+  inner_join(habitatmap_rbbmc, by = "polygon_id") %>%
+  mutate(type_leefgebied = "rbbmc")
+
+leefgebied_rbbmc_union <-  leefgebied_rbbmc %>%
+  group_by(type_leefgebied) %>%
+  summarise(n_pol = n()) %>%
+  ungroup()
+
+rm(habitatmap_stdized)
+```
+
+
+```{r}
+#| label: make-grts-grid
+#| warning: false
+#| message: false 
+
+# create 250 x 250 m grid
+
+cellsize <- 250
+
+bbox_sampleframe <- read_admin_areas(dsn = "flanders") %>%
+  st_buffer(dist = cellsize * 2) %>%
+  st_bbox()
+
+xmin <- floor(bbox_sampleframe$xmin/1000)*1000 - cellsize / 2
+ymin <- floor(bbox_sampleframe$ymin/1000)*1000 - cellsize / 2
+xmax <- ceiling(bbox_sampleframe$xmax/1000)*1000 + cellsize / 2
+ymax <- ceiling(bbox_sampleframe$ymax/1000)*1000 + cellsize / 2
+
+# we add a row or a column when we have an odd number of rows or columns
+# otherwise the grid created with grtsdb package is not correct (point coordinates are not in the center of the cell)
+
+xres <- (xmax - xmin) / cellsize
+yres <- (ymax - ymin) / cellsize
+
+is_odd <- function(x){round(x/2) != x/2}
+
+if (is_odd(xres)) {
+  xmin = xmin - cellsize
+}
+
+if (is_odd(yres)) {
+  ymin = ymin - cellsize
+}
+
+xres <- (xmax - xmin) / cellsize
+yres <- (ymax - ymin) / cellsize
+
+bbox <- rbind(
+  x = c(xmin, xmax),
+  y = c(ymin, ymax)
+)
+
+db <- connect_db(db = "data/zeggekorfslak/grts.sqlite")
+  
+add_level(bbox = bbox, cellsize = cellsize, grtsdb = db)
+ 
+full_grid <- extract_sample(
+  grtsdb = db, samplesize = 1000000, bbox = bbox, cellsize = cellsize
+)
+
+steekproefkader_hok <- full_grid %>%
+  mutate(geom = str_c("POLYGON ((", x1c - cellsize / 2, " ", x2c - cellsize / 2, 
+                                ",", x1c + cellsize / 2, " ", x2c - cellsize / 2,
+                                ",", x1c + cellsize / 2, " ", x2c + cellsize / 2,
+                                ",", x1c - cellsize / 2, " ", x2c + cellsize / 2,
+                                ",", x1c - cellsize / 2, " ", x2c - cellsize / 2, "))")) %>%
+  st_as_sf(wkt = "geom", crs = 31370)
+
+```
+
+**Kenmerken per 250 x 250 m hok**
+
+Voor elk 250 x 250 m hok in Vlaanderen bepalen we onderstaande kenmerken.
+
+Aanwezigheid van Zeggekorfslak:
+
+  -   totaal aantal individuen van Zeggekorfslak,
+  -   jaar van meest recente waarneming van minstens 1 individu,
+  -   jaar van meest recente nulwaarneming,
+  -   aantal punten met waarneming van minstens 1 individu,
+  -   aantal punten met nulwaarneming.
+
+```{r}
+#| label: aanwezigheid-hok
+#| warning: false
+#| message: false 
+
+aanwezigheid_hok <- data_all_sf %>%
+  st_join(steekproefkader_hok) %>%
+  st_drop_geometry() %>%
+  mutate(aanwezigheid = ifelse(aantal > 0, "aanwezig", "afwezig")) %>%
+  group_by(ranking, soort) %>%
+  mutate(tot_aantal = sum(aantal),
+         locatie = str_c(unique(locatie), collapse = ";")) %>%
+  ungroup() %>%
+  group_by(ranking, soort, locatie, tot_aantal, aanwezigheid) %>%
+  summarise(jaar_max = max(jaar),
+            n_points = n(),
+            bron = str_c(unique(bron), collapse = "; ")) %>%
+  ungroup()
+
+aanwezigheid_hok_wide <- aanwezigheid_hok %>%
+  pivot_wider(names_from = aanwezigheid,
+              values_from = c(jaar_max, n_points, bron))
+
+steekproefkader_hok_aanwezig <- steekproefkader_hok %>%
+  left_join(aanwezigheid_hok_wide, by = "ranking") %>%
+  mutate(selectie_aanwezigheid = ifelse(tot_aantal <= 0, FALSE,
+                                        ifelse(is.na(jaar_max_afwezig), TRUE,
+                                               ifelse((jaar_max_afwezig - jaar_max_aanwezig) > 6 & n_points_afwezig >= 3, FALSE, TRUE))))
+
+```
+
+Potentieel leefgebied per hok:
+
+  -   proportie potentieel leefgebied (variant),
+  -   proporttie rbbmc (Grote zeggevegetaties).
+
+```{r}
+#| label: leefgebied-hok
+#| warning: false
+#| message: false 
+
+leefgebied_hok_inters <- steekproefkader_hok %>%
+  st_intersection(leefgebied_variant) %>%
+  mutate(area = st_area(geom)) %>%
+  st_drop_geometry()
+
+leefgebied_hok <- leefgebied_hok_inters %>%
+  group_by(ranking) %>%
+  summarise(opp_leefgebied_ha = sum(drop_units(area)) / 10000) %>%
+  ungroup() %>%
+  mutate(prop_leefgebied = round(opp_leefgebied_ha / (2.50 * 2.50), 3)) %>%
+  filter(prop_leefgebied > 0.01)
+
+rbbmc_hok_inters <- steekproefkader_hok %>%
+  st_intersection(leefgebied_rbbmc) %>%
+  mutate(opp_rbbmc_ha = drop_units(st_area(geom)) * phab/100)  %>%
+  st_drop_geometry()
+
+rbbmc_hok <- rbbmc_hok_inters %>%
+  group_by(ranking) %>%
+  summarise(opp_rbbmc_ha = sum(opp_rbbmc_ha) / 10000) %>%
+  ungroup() %>%
+  mutate(prop_rbbmc = round(opp_rbbmc_ha / (2.50 * 2.50), 3)) %>%
+  filter(prop_rbbmc > 0.01)
+
+steekproefkader_kenm <- steekproefkader_hok_aanwezig %>%
+  left_join(leefgebied_hok, by = "ranking") %>%
+  left_join(rbbmc_hok, by = "ranking") %>%
+  filter(!(is.na(opp_leefgebied_ha) & is.na(soort)))
+
+```
+
+Status van het gebied uit de inhaalslag waarmee het hok overlapt:
+
+  -   locatie ongeschikt,
+  -   locatie ontoegankelijk,
+  -   zeggekorfslak aanwezig,
+  -   zeggekorfslak afwezig (nulwaarnemingen voor minstens 5 punten),
+  -   locatie onvoldoende onderzocht (minder dan 5 nulwaarnemingen),
+  -   locatie niet onderzocht (geen waarnemingen).
+
+```{r}
+#| label: inhaalslag-status-hok
+#| warning: false
+#| message: false 
+
+status_hok <- steekproefkader_hok %>%
+  st_join(status_locatie_sf, largest = TRUE) %>%
+  st_drop_geometry() %>%
+  filter(!is.na(locatie)) %>%
+  select(ranking, locatie_inhaalslag = locatie, locatie_status)
+
+provinces <- read_admin_areas(dsn = "provinces") %>%
+  select(provincie = name)
+
+ecoregions <- read_ecoregions() %>%
+  select(ecoregio = region_name)
+
+steekproefkader_kenm <- steekproefkader_hok_aanwezig %>%
+  left_join(leefgebied_hok, by = "ranking") %>%
+  left_join(rbbmc_hok, by = "ranking") %>%
+  left_join(status_hok, by = "ranking") %>%
+  filter(!(is.na(opp_leefgebied_ha) & is.na(soort))) %>%
+  st_join(provinces, largest = TRUE) %>%
+  st_join(ecoregions, largest = TRUE)
+
+```
+
+**Selectie 250 m x 250 m hokken in steekproefkader**
+
+Vooraleer we een steekproef trekken moeten we bepalen welke hokken tot het steekproefkader behoren.
+Hierbij moeten we een afweging maken tussen:
+
+-   een voldoende trefkans per hok,
+-   een voldoende representativiteit van het steekproefkader (er is nog een groot deel van het potentieel leefgebied niet onderzocht, maar de trefkans is er laag).
+
+Als **basis** selecteren we de hokken met recente aanwezigheid van Zeggekorfslak.
+Meer concreet gaat het om alle hokken met effectieve waarnemingen van Zeggekorfslak sinds 2008.
+
+Sommige hokken bevatten naast effectieve waarnemingen ook nulwaarnemingen.
+Deze hokken worden niet weerhouden indien:
+
+-   er minstens 3 nulwaarnemingen in het hok liggen
+-   EN de meest recente effectieve waarneming minstens 6 jaar ouder is dan de meest recente nulwaarneming.
+
+Naast de hokken met effectieve waarnemingen van zeggekorfslak, kunnen volgende 'uitbreidingen' van het steekproefkader overwogen worden:
+
+-   **uitbreiding 1**:
+    -   hokken in een inhaalslag gebied met aanwezigheid van de soort, maar geen (nul)waarnemingen in het hok zelf (Zeggekorfslak werd dus wel waargenomen in een ander hok binnen het inhaalslag gebied)
+    -   EN er is minstens 10 % RBB mc of 75% potentieel leefgebied in het hok (om voldoende trefkans te verzekeren)
+-   **uitbreiding 2**:
+    -   hokken in niet of onvoldoende onderzochte inhaalslag locaties
+    -   EN er is minstens 20 % RBB mc (om voldoende trefkans te verzekeren)
+
+```{r}
+#| label: selectie-hok-steekproefkader
+#| warning: false
+#| message: false 
+
+steekproefkader_basis <- steekproefkader_kenm %>%
+  filter(selectie_aanwezigheid) %>%
+  mutate(type_selectie = "Basis")
+
+steekproefkader_uitbreiding1 <- steekproefkader_kenm %>%
+  filter(locatie_status == "aanwezig goedgekeurd", 
+         prop_rbbmc >= 0.05 ) %>%
+  filter(!ranking %in% steekproefkader_basis$ranking) %>%
+  filter(is.na(n_points_afwezig) | n_points_afwezig < 1) %>%
+  mutate(type_selectie = "Uitbreiding 1")
+
+steekproefkader_uitbreiding2 <- steekproefkader_kenm %>%
+  filter(locatie_status %in% c("niet onderzocht", "onvoldoende onderzocht") | is.na(locatie_status), 
+         prop_rbbmc >= 0.20) %>%
+  filter(!ranking %in% steekproefkader_basis$ranking) %>%
+  filter(!ranking %in% steekproefkader_uitbreiding1$ranking) %>%
+  filter(is.na(n_points_afwezig) | n_points_afwezig < 1) %>%
+  mutate(type_selectie = "Uitbreiding 2")
+
+steekproefkader_select <- steekproefkader_basis %>%
+  bind_rows(steekproefkader_uitbreiding1) %>%
+  bind_rows(steekproefkader_uitbreiding2)
+```
+
+@tbl-overzicht-sk geeft het aantal hokken voor de verschillende categorieën (Basis, Uitbreiding 1 en Uitbreiding 2).
+De ligging van (de centroïde van) de hokken gegen we weer in @fig-steekproefkader.
+De kleur geeft aan hoeveel potentieel leefgebied er zich in het hok bevindt.
+Sommige hokken werden geselecteerd op basis van de aanwezigheid van Zeggekorfslak, maar bevatten geen potentieel leefgebied volgens de BWK.
+Deze hokken zijn aangeduid met een driehoek symbool.
+
+```{r}
+#| label: tbl-overzicht-sk
+#| tbl-cap: Aantal hokken in steekproefkader
+#| warning: false
+#| message: false 
+
+overzicht_hokken_steekproefkader <- steekproefkader_select %>%
+  st_drop_geometry() %>%
+  group_by(type_selectie) %>%
+  summarise("Aantal hokken" = n()) %>%
+  ungroup()
+
+overzicht_hokken_steekproefkader %>%
+  rename(Categorie = type_selectie) %>%
+  kable() %>%
+  kable_styling(full_width = FALSE)
+
+```
+
+```{r}
+#| label: fig-steekproefkader
+#| fig.cap: Overzicht hokken steekproefkader
+#| warning: false
+#| message: false 
+
+steekproefkader_select_centroid <- steekproefkader_select %>%
+  st_centroid() %>%
+  mutate(prop_leefgebied = ifelse(is.na(prop_leefgebied), 0, prop_leefgebied),
+         leefgebied_aanwezig = ifelse(prop_leefgebied > 0, "Ja", "Nee")
+         )
+
+ggplot() +
+  geom_sf(data = flanders, colour = "grey", alpha = 0.01) +
+  geom_sf(data = steekproefkader_select_centroid, 
+          aes(colour = prop_leefgebied, shape = leefgebied_aanwezig), size = 3, alpha = 0.8) +
+  scale_colour_gradient(low = "lightgreen", high = "darkgreen") +
+  facet_wrap(~type_selectie, ncol = 1) +
+  labs(colour = "Proportie potentieel leefgebied",
+       shape = "Potentieel leefgebied aanwezig?")
+  
+```
+
+
+
+```{r}
+#| label: select-sk
+#| warning: false
+#| message: false 
+
+N <- 60
+
+ steekproefkader_select <- steekproefkader_select %>%
+  filter(type_selectie %in% c("Basis", "Uitbreiding 1")) %>%
+  mutate(ranking_rel = rank(ranking),
+         steekproef = ranking_rel <= N)
+
+leefgebied_steekproefkader <- leefgebied_variant %>%
+  st_join(steekproefkader_select, largest = TRUE) %>%
+  filter(!is.na(ranking_rel)) %>%
+  select(polygon_id, bwk_label, distance_to_mc)
+
+rbb_mc_steekproefkader <- leefgebied_rbbmc %>%
+  st_join(steekproefkader_select, largest = TRUE) %>%
+  filter(!is.na(ranking_rel)) %>%
+  select(polygon_id, description_orig, type, phab)
+
+# leefgebied_steekproefkader %>%
+#   st_write(dsn = "data/zeggekorfslak/meetnet_zeggekorfslak.gpkg", "potentieel_leefgebied", delete_layer = TRUE)
+# 
+# rbb_mc_steekproefkader %>%
+#   st_write(dsn = "data/zeggekorfslakmeetnet_zeggekorfslak.gpkg", "grote_zeggevegetaties", delete_layer = TRUE)
+
+# aanwezig %>%
+#   st_write(dsn = "data/zeggekorfslakmeetnet_zeggekorfslak.gpkg", "zeggekorfslak_aanwezig", delete_layer = TRUE)
+```
+
+Na manuele controle van de hokken in 'Uitbreiding 2', besluiten we dat deze hokken een zeer lage kans op aanwezigheid van zeggekorfslak hebben.
+We weerhouden dus enkele de 'Basis' en 'Uitbreiding 1' hokken in het steekproefkader.
+
+#### Steekproeftrekking
+
+We maken gebruik van een ruimtelijk gebalanceerde steekproef op basis van het Generalized Random Tessellation Stratified (GRTS) algoritme [@stevens_2004].
+De implementatie gebeurt via het R-package `grtdsdb` [@onkelinx_2022].
+We maken eerst een grid van 250 m x 250 m dat Vlaanderen volledig bedekt.
+Vervolgens kennen we een uniek GRTS-rangnummer toe aan elke gridcel.
+De rangnummers van het volledige grid worden opgeslagen in de database `grts.sqlite`.
+Hierdoor kunnen we de steekproef reproduceren.
+
+We opteren voor een totale steekproefgrootte van 60 hokken, die in een meetcyclus van 6 jaar worden geteld.
+Elk jaar worden er dus 10 hokken geteld.
+
+We willen met de steekproef ook een goed zicht krijgen op de verspreiding van de soort.
+Daarom passen we een gestratificeerde steekproef toe op basis van de ecoregio's.
+We selecteren een aantal hokken per ecoregio op basis van de relatieve ranking binnen de ecoregio.
+De steekproefgrootte per ecoregio is proportioneel met het aantal hokken per ecoregio in het steekproefkader.
+
+@tbl-overzicht-ecoregio toont de steekproefgrootte per ecoregio met en zonder stratificatie.
+
+```{r}
+#| label: strata-ecoregio
+#| warning: false
+#| message: false 
+
+overzicht_ecoregio <- steekproefkader_select %>%
+  st_drop_geometry() %>%
+  mutate(tot_steekproefkader = n(),
+         tot_steekproef = sum(steekproef)) %>%
+  group_by(ecoregio) %>%
+  summarise(n_steekproefkader = n(),
+            n_steekproef = sum(steekproef),
+            prop_steekproefkader = round(n() / 100, 3),
+            prop_steekproef = round(sum(steekproef) / 60, 3),
+            n_steekproef_stratificatie = round(n_steekproefkader * 60/100)) %>%
+  ungroup() 
+
+samplesize_ecoregio <- overzicht_ecoregio %>%
+  select(ecoregio, n_strata = n_steekproef_stratificatie)
+
+steekproefkader_select <- steekproefkader_select %>%
+  left_join(samplesize_ecoregio, by = "ecoregio") %>%
+  group_by(ecoregio) %>%
+  mutate(ranking_rel_ecoregio = rank(ranking),
+         steekproef_stratified = ranking_rel_ecoregio <= n_strata) %>%
+  ungroup()
+```
+
+```{r}
+#| label: tbl-overzicht-ecoregio
+#| tbl-cap: Aantal geselecteerde hokken met en zonder stratificatie volgens ecoregio
+
+overzicht_ecoregio %>%
+  select(Ecoregio = ecoregio, "Hokken in steekproefkader" = n_steekproefkader,
+         "Hokken in steekproef" = n_steekproef, "Hokken in gestratificeerde steekproef" = n_steekproef_stratificatie) %>%
+  kbl(booktabs = TRUE) %>%
+  kable_styling() %>%
+  column_spec(c(2,3,4), "2cm")
+```
+
+Als we hokken selecteren volgens het relatieve GRTS-rangnummer binnen de ecoregio's zien we dat in sommige gebieden relatief veel hokken geselecteerd worden.
+Anderzijds zijn er soms sterk geïsoleerde hokken die niet in de steekproef voorkomen, maar wel van belang zijn om goed zicht te krijgen op de verspreiding.
+
+Daarom doen we volgende (beperkte) manuele optimalisatie om nog een iets betere spreiding van de steekproef te bekomen:
+
+-   Ecoregio van de zuidoostelijke heuvelzone
+
+    -   Uit: Sint-Joris-Winge - Walenbos (relatieve ranking = 8)
+    -   Uit: Huldenberg - Laanvallei - Onderbos (relatieve ranking = 12)
+    -   In: Assent - Paepenbroek (relatieve ranking = 17)
+    -   In: Steenputbeek (relatieve ranking = 25)
+    
+-   Ecoregio van de zuidwestelijke heuvelzone
+
+    -   Uit: Boelaremeersen (relatieve ranking = 2)
+    -   In: Ninove - Dendervallei (relatieve ranking = 19)
+
+-   Ecoregio van de krijt-leemgebieden
+
+    -   Uit: Rijkhoven - Molenbeemden (relatieve ranking = 9)
+    -   Uit: De Kevie (relatieve ranking = 8)
+    -   In: Zammelen (relatieve ranking = 16)
+    -   In: Wintershoven (relatieve ranking = 17)
+    
+-   Ecoregio van de polders en de getijdenschelde
+
+    -   Uit: Weert Briel (relatieve ranking = 7)
+    -   In: Sint-Onolfspolder (relatieve ranking = 18)  
+
+```{r}
+steekproefkader_select <- steekproefkader_select %>%
+  mutate(steekproef_finaal = steekproef_stratified,
+         steekproef_finaal = ifelse(ecoregio == "Ecoregio van de zuidoostelijke heuvelzone",
+                                    ifelse(ranking_rel_ecoregio %in% c(8, 12), FALSE,
+                                           ifelse(ranking_rel_ecoregio %in% c(17, 25), TRUE, steekproef_finaal)),
+                                    steekproef_finaal),
+         steekproef_finaal = ifelse(ecoregio == "Ecoregio van de krijt-leemgebieden",
+                                    ifelse(ranking_rel_ecoregio %in% c(8,9), FALSE,
+                                           ifelse(ranking_rel_ecoregio %in% c(16,17), TRUE, steekproef_finaal)),
+                                    steekproef_finaal),
+         steekproef_finaal = ifelse(ecoregio == "Ecoregio van de zuidwestelijke heuvelzone",
+                                    ifelse(ranking_rel_ecoregio %in% c(2), FALSE,
+                                           ifelse(ranking_rel_ecoregio %in% c(19), TRUE, steekproef_finaal)),
+                                    steekproef_finaal),
+         steekproef_finaal = ifelse(ecoregio == "Ecoregio van de polders en de getijdenschelde",
+                                    ifelse(ranking_rel_ecoregio %in% c(7), FALSE,
+                                           ifelse(ranking_rel_ecoregio %in% c(18), TRUE, steekproef_finaal)),
+                                    steekproef_finaal))
+       
+```
+
+```{r, eval = FALSE}
+steekproefkader_select %>%
+  select(locatie, ecoregio, ranking, ranking_rel_ecoregio, type_selectie, tot_aantal, jaar_max_aanwezig, prop_leefgebied, prop_rbbmc, bron_aanwezig, locatie_inhaalslag, locatie_status, steekproef_finaal) %>%
+  st_write(dsn = "data/zeggekorfslak/meetnet_zeggekorfslak.gpkg", "steekproefkader", delete_layer = TRUE, quiet = TRUE)
+```
+
+```{r}
+#| label: tbl-overzicht-s
+#| tbl-cap: Aantal hokken in steekproef
+#| warning: false
+#| message: false 
+
+steekproef <- steekproefkader_select %>%
+  filter(steekproef_finaal) %>%
+  mutate(naam = ifelse(!is.na(locatie_inhaalslag), locatie_inhaalslag, locatie)) %>%
+  group_by(ecoregio) %>%
+  mutate(n_ecoregio = n(),
+         ranking_rel_ecoregio = rank(ranking),
+         panel = ifelse(ranking_rel_ecoregio <= floor((n() / 2)), 1,
+                        ifelse(ranking_rel_ecoregio > ceiling((n() / 2)), 2,
+                               NA))) %>%
+  ungroup() %>%
+  mutate(pannel_missing = is.na(panel)) %>% #indien oneven hokken in ecoregio, kan middelste hok nog niet toegevoegd worden aan panel
+  group_by(pannel_missing) %>%
+  mutate(panel_add = ceiling(rank(ranking) * 2 / n())) %>% # alle middelste hokken kennen we toe aan panel op basis van relatieve ranking
+  ungroup() %>%
+  mutate(panel = ifelse(pannel_missing, panel_add, panel)) %>%
+  arrange(ecoregio, ranking) %>%
+  select(naam, ecoregio, ranking, ranking_rel_ecoregio, panel, type_selectie, tot_aantal)
+
+```
+
+```{r, eval = FALSE}
+steekproef %>%
+  st_write(dsn = "data/zeggekorfslak/meetnet_zeggekorfslak.gpkg", "steekproef", delete_layer = TRUE, quiet = TRUE)
+```
+
+```{r}
+# namen van hokken manueel toegevoegd
+steekproef_meetnetten <- st_read(dsn = "data/zeggekorfslak/meetnet_zeggekorfslak.gpkg", "steekproef", quiet = TRUE)
+```
+
+@tbl-overzicht-s2 en @fig-steekproef geven een overzicht van de finale selectie van de hokken in de steekproef per ecoregio. 
+
+```{r}
+#| label: tbl-overzicht-s2
+#| tbl-cap: Geselecteerde hokken per ecoregio in de steekproef voor Zeggekorfslak
+#| warning: false
+#| message: false 
+
+steekproef_meetnetten %>%
+  st_drop_geometry() %>%
+  arrange(naam_meetnetten) %>%
+  mutate(type_selectie = ifelse(type_selectie == "basis", "Basis", "Uitbereiding 1")) %>%
+  group_by(ecoregio, type_selectie) %>%
+  summarise(steekproef_n = n(),
+            hokken = str_c(naam_meetnetten, collapse = ", ")) %>%
+  ungroup() %>%
+  select(Ecoregio = ecoregio, Categorie = type_selectie, "Aantal hokken" = steekproef_n, "Naam hokken" = hokken) %>%
+  kbl(booktabs = TRUE, align = "lccl") %>%
+  kable_styling(font_size = 8) %>%
+  column_spec(1, width = "4cm") %>%
+  column_spec(2, width = "1cm") %>%
+  column_spec(3, width = "1cm") %>%
+  column_spec(4, width = "8cm")
+```
+
+\needspace{150mm}
+
+```{r}
+#| label: fig-steekproef
+#| fig.cap: Overzicht 250 m x 250 m hokken in het meetnet Zeggekorfslak
+#| message: false
+#| warning: false
+#| fig-height: 6
+
+steekproef <- steekproef %>%
+  mutate(periode = ifelse(panel == 1, "2025-2027", "2028-2030"))
+
+ggplot() +
+  geom_sf(data = flanders, colour = "grey", alpha = 0.01) +
+  geom_sf(data = steekproef %>%
+            st_centroid(), 
+          aes(colour = type_selectie), size = 3, alpha = 0.6) +
+  labs(colour = "Categorie") + 
+  facet_wrap(~ecoregio, ncol = 2, ,labeller = label_wrap_gen(width = 40)) +
+  theme(legend.position = "bottom")
+```
+
+De steekproef verdelen we in 2 groepen (op basis van de relatieve ranking):
+
++ de eerste groep van 30 hokken worden in de periode 2025-2027 bemonsterd,
++ de tweede groep van 30 hokken worden in de periode 2028-2030 bemonsterd.
+
+### Gegevensinvoer
+
+De gegevens worden ingevoerd via de meetnetten-app op via de website [meetnetten.be](https://www.meetnetten.be/).
+Voor Zeggekorfslak kunnen er twee invoerprotocollen geselecteerd worden:
+
+-   zichtwaarneming (verplicht deel van veldprotocol)
+-   zeefstaal (optioneel deel van veldprotocol)
+
+Voor beide protocollen worden per hok volgende variabelen ingevoerd:
+
+-   Waarnemer
+-   Datum
+-   Tijd: starttijd en eindtijd (optioneel)
+-   Medetellers (optioneel)
+-   Het veldwerk is vlot en probleemloos verlopen?
+    - Ja
+    - Nee
+        - weersomstandigheden waren ongunstig
+        - telmethode uit handleiding niet gevolgd
+        - geen veldwerk mogelijk - locatie ontoegankelijk
+        - geen veldwerk mogelijk - locatie is ongeschikt voor de soort
+-   Aantal geschikte locaties (binnen het hok)
+    - 5 of meer
+    - minder dan 5
+
+Vervolgens wordt elke tellocatie in het hok vastgelegd.
+Per tellocatie worden volgende gegevens ingevoerd:
+
+-   vegetatietype (er kunnen 2 vegetatietypes worden ingevoerd indien er verschillende vegetatielagen zijn)
+-   waterpeil t.o.v. het maaiveld (enkel voor zichtwaarnemingen, wanneer er een zeefstaal wordt genomen veronderstellen we dat het waterpeil zicht onder het maaiveld bevindt)
+    - onder
+    - op
+    - boven
+-   Aantal getelde Zeggekorfslak exemplaren, met onderscheid tussen
+    - vers/levend adult
+    - vers/levend juveniel
+    - (sub)fossiel

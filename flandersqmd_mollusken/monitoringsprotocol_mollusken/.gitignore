@@ -1,0 +1,13 @@
+/\.quarto
+/\.Rproj.user
+/*\.eps
+/*\.pdf
+/*\.sty
+/*\.tex
+output
+site_libs
+/_freeze
+/_extensions
+/_zeggekorfslak_cache
+/.quarto/
+**/*.quarto_ipynb
