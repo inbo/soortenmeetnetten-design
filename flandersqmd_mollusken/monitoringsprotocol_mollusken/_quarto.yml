@@ -15,8 +15,8 @@ execute:
   warnings: false
   errors: false
   message: false
-  freeze: true
-  cache: false
+  freeze: auto
+  cache: true
 format:
   flandersqmd-book-html: default
   flandersqmd-book-pdf: default
@@ -24,7 +24,7 @@ lang: nl-BE
 flandersqmd:
   entity: INBO
   level: 2
-  title: Monitoringsprotocol Nauwe korfslak en Zeggekorfslak
+  title: Monitoringsprotocol nauwe korfslak en zeggekorfslak
   subtitle: Versie 2.0
   shorttitle: monitoringsprotocol-korfslakken
   author:
@@ -37,17 +37,23 @@ flandersqmd:
     - Instituut voor Natuur- en Bosonderzoek (INBO)
     corresponding: true
   - name:
-      given: Sam
-      family: Van de Poel
-    email: sam.vandepoel@natuurpunt.be
-    affiliation:
-    - Natuurpunt Studie
-  - name:
       given: Jo
       family: Packet
     orcid: 0000-0001-5590-323X
     affiliation:
     - Instituut voor Natuur- en Bosonderzoek (INBO)
+  - name:
+      given: Sam
+      family: Provoost
+    orcid: 0000-0003-2751-5269
+    affiliation:
+    - Instituut voor Natuur- en Bosonderzoek (INBO)
+  - name:
+      given: Sam
+      family: Van de Poel
+    email: sam.vandepoel@natuurpunt.be
+    affiliation:
+    - Natuurpunt Studie
   - name:
       given: Sam
       family: Provoost
@@ -82,6 +88,11 @@ flandersqmd:
   public_report: true
   colophon: true
   floatbarrier: section
+  depotnr: D/2026/3241/274
+  reportnr: 55
+  doi: 10.21436/inbor.152228551
+  year: 2026
+  coverdescription: 'Telling Nauwe korfslak'
 book:
   downloads: pdf
   open-graph: true
@@ -89,22 +100,21 @@ book:
   navbar:
     pinned: true
     right:
-    - icon: mastodon
-      href: https://mastodon.online/&#64;inbo
     - icon: facebook
       href: https://www.facebook.com/INBOVlaanderen/
     left:
     - text: Cover
       file: index.md
-    - text: Aanbevelingen
-      file: aanbevelingen.md
     - text: Inleiding
-      file: inleiding.md
+      file: inleiding.qmd
+    - text: Zeggekorfslak
+      file: zeggekorfslak.qmd
+    - text: Nauwe korfslak
+      file: nauwe_korfslak.qmd
   chapters:
   - index.md
   - abstract.md
-  - aanbevelingen.md
-  - inleiding.md
+  - inleiding.qmd
   - zeggekorfslak.qmd
   - nauwe_korfslak.qmd
   - referenties.md

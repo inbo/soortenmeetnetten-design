@@ -1,0 +1,60 @@
+---
+toc: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(tidyverse)
+library(kableExtra)
+```
+
+# Inleiding
+
+Betrouwbare informatie over de toestand en trends van dier- en plantensoorten in Vlaanderen is van
+groot belang voor de onderbouwing van het Vlaamse soortenbeleid en voor de rapportage over de Natura 2000-soorten aan Europa [@adriaens2011].
+Daarom werden in de periode van 2016 tot 2018 soortenmeetnetten opgestart voor de langetermijnmonitoring van 65 Vlaamse en Europees prioritaire soorten [@westra_voortgangsrapport_2019].
+Elk meetnet bestaat uit een aantal vooraf vastgelegde locaties, waar een of meerdere soorten volgens een gestandaardiseerde methode geteld worden [@de_knijf_monitoring_2014]. 
+
+Binnen de groep van de mollusken zijn er in Vlaanderen vier Europese prioritaire soorten die op Bijlage II of IV van de Habitatrichtlijn voorkomen.
+Voor deze soorten werd in eerste instantie een inhaalslag uitgewerkt om de verspreiding in Vlaanderen beter in kaart te brengen [@packet_2018].
+Dit is nodig om een goed steekproefkader te kunnen opstellen bij het ontwerpen van een meetnet.
+
+```{r}
+#| label: tbl-mollusken
+#| tbl-cap: Europees prioritaire mollusken in Vlaanderen
+#| html-table-processing: none
+
+tabel <- tibble("Nederlandse naam" = c("Nauwe korfslak", "Zeggekorfslak", "Platte schijfhoren", "Bataafse stroommossel"),
+                "Wetenschappelijke naam" = c("Vertigo angustior", "Vertigo moulinsiana", "Anisus vorticulus", "Unio crassus"),
+                "Bijlage HRL" = c("II", "II", "II en IV", "II"))
+
+tabel %>%
+  kbl(booktabs = TRUE) %>%
+  kable_styling() %>%
+  column_spec(column = 2, italic = TRUE)
+
+```
+
+De inhaalslagen van de nauwe korfslak en de zeggekorfslak zijn ondertussen afgerond.
+We geven in dit rapport beknopt de resultaten van de inhaalslag weer en we stellen het meetnetontwerp voor.
+Volgende onderdelen van het meetnetontwerp komen aan bod:
+
+- het veldprotocol voor de bemonstering van een steekproefeenheid,
+- de opmaak van het steekproefkader,
+- de steekproeftrekking,
+- de gegevensinvoer.
+
+De twee andere prioritaire mollusken worden niet verder besproken in dit rapport.
+Volgens de huidige kennis wordt Bataafse stroommossel als afwezig beschouwd in Vlaanderen [@van_landuyt_2025].
+De platte schijfhoren werd lange tijd als afwezig beschouwd, maar in 2025 waargenomen in een natuurgebied in de omgeving van Aarschot [@langeraert_2026].
+In afwachting van een uitgewerkt monitoringsprotocol voor deze soort, zal de vindplaats verder worden opgevolgd door experten van INBO en Natuurpunt Studie.
+
+We vermelden ten slotte nog de verschillende partners van het soortenmeetnettenproject.
+Een zeer belangrijke rol is weggelegd voor de vrijwilligers, die de meeste tellingen uitvoeren.
+De soortenmeetnetten zijn dus een goed voorbeeld van een citizen-science-project.
+Natuurpunt Studie staat in voor de coördinatie en aansturing van de vrijwilligers.
+Het Instituut voor Natuur- en Bosonderzoek (INBO) ontwerpt de meetnetten en verwerkt de telgegevens.
+Het Agentschap voor Natuur en Bos (ANB) en het INBO staan in voor de financiering.
+Voor de planning van de tellingen en de invoer van gegevens werd het webportaal [meetnetten.be](https://www.meetnetten.be) ontwikkeld.
