@@ -51,7 +51,7 @@ flandersqmd:
   - name:
       given: Sam
       family: Van de Poel
-    email: sam.vandepoel@natuurpunt.be
+    orcid: 0000-0001-6251-3766
     affiliation:
     - Natuurpunt Studie
   - name:

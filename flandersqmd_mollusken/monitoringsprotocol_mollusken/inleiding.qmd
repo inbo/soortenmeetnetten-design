@@ -26,7 +26,7 @@ Dit is nodig om een goed steekproefkader te kunnen opstellen bij het ontwerpen v
 #| tbl-cap: Europees prioritaire mollusken in Vlaanderen
 #| html-table-processing: none
 
-tabel <- tibble("Nederlandse naam" = c("Nauwe korfslak", "Zeggekorfslak", "Platte schijfhoren", "Bataafse stroommossel"),
+tabel <- tibble("Nederlandse naam" = c("nauwe korfslak", "zeggekorfslak", "platte schijfhoren", "bataafse stroommossel"),
                 "Wetenschappelijke naam" = c("Vertigo angustior", "Vertigo moulinsiana", "Anisus vorticulus", "Unio crassus"),
                 "Bijlage HRL" = c("II", "II", "II en IV", "II"))
 

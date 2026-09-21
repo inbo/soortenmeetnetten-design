@@ -13,7 +13,7 @@ in Vlaanderen. Deze meetnetten bestaan uit een aantal vastgelegde locaties die s
 werden voor elke soort. Op deze locaties voeren vrijwilligers op een gestandaardiseerde manier tellingen
 uit onder coördinatie van Natuurpunt Studie.
 
-In het soortenmeetnettenproject worden twee soorten mollusken opgevolgd: de nauwe korfslak en de zeggekorfslak.
+In het soortenmeetnettenproject worden twee soorten mollusken opgevolgd: de nauwe korfslak (*Vertigo angustior*) en de zeggekorfslak (*Vertigo moulinsiana*).
 Beide zijn Europees prioritaire soorten die voorkomen op Bijlage II van de Habitatrichtlijn.
 In een eerste fase van het soortenmeetnettenproject werd de verspreiding van de nauwe korfslak en de zeggekorfslak op een gestructureerde manier in kaart gebracht via een inhaalslag.
 
