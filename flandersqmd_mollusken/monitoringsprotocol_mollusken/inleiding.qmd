@@ -8,6 +8,7 @@ toc: false
 
 library(tidyverse)
 library(kableExtra)
+library(knitr)
 ```
 
 # Inleiding
@@ -17,7 +18,7 @@ groot belang voor de onderbouwing van het Vlaamse soortenbeleid en voor de rappo
 Daarom werden in de periode van 2016 tot 2018 soortenmeetnetten opgestart voor de langetermijnmonitoring van 65 Vlaamse en Europees prioritaire soorten [@westra_voortgangsrapport_2019].
 Elk meetnet bestaat uit een aantal vooraf vastgelegde locaties, waar een of meerdere soorten volgens een gestandaardiseerde methode geteld worden [@de_knijf_monitoring_2014]. 
 
-Binnen de groep van de mollusken zijn er in Vlaanderen vier Europese prioritaire soorten die op Bijlage II of IV van de Habitatrichtlijn voorkomen.
+Binnen de groep van de mollusken zijn er in Vlaanderen vier Europese prioritaire soorten die op Bijlage II of IV van de Habitatrichtlijn voorkomen (@tbl-mollusken).
 Voor deze soorten werd in eerste instantie een inhaalslag uitgewerkt om de verspreiding in Vlaanderen beter in kaart te brengen [@packet_2018].
 Dit is nodig om een goed steekproefkader te kunnen opstellen bij het ontwerpen van een meetnet.
 
@@ -47,8 +48,8 @@ Volgende onderdelen van het meetnetontwerp komen aan bod:
 - de gegevensinvoer.
 
 De twee andere prioritaire mollusken worden niet verder besproken in dit rapport.
-Volgens de huidige kennis wordt Bataafse stroommossel als afwezig beschouwd in Vlaanderen [@van_landuyt_2025].
-De platte schijfhoren werd lange tijd als afwezig beschouwd, maar in 2025 waargenomen in een natuurgebied in de omgeving van Aarschot [@langeraert_2026].
+Volgens de huidige kennis wordt bataafse stroommossel als afwezig beschouwd in Vlaanderen [@van_landuyt_2025].
+De platte schijfhoren werd lange tijd als afwezig beschouwd, maar werd in 2025 waargenomen in een natuurgebied in de omgeving van Aarschot [@langeraert_2026].
 In afwachting van een uitgewerkt monitoringsprotocol voor deze soort, zal de vindplaats verder worden opgevolgd door experten van INBO en Natuurpunt Studie.
 
 We vermelden ten slotte nog de verschillende partners van het soortenmeetnettenproject.
@@ -58,3 +59,9 @@ Natuurpunt Studie staat in voor de coördinatie en aansturing van de vrijwillige
 Het Instituut voor Natuur- en Bosonderzoek (INBO) ontwerpt de meetnetten en verwerkt de telgegevens.
 Het Agentschap voor Natuur en Bos (ANB) en het INBO staan in voor de financiering.
 Voor de planning van de tellingen en de invoer van gegevens werd het webportaal [meetnetten.be](https://www.meetnetten.be) ontwikkeld.
+
+::: {.content-hidden when-format="html"}
+
+De [websiteversie van dit rapport](https://www.vlaanderen.be/inbo/rapporten/monitoringsprotocol_mollusken/index.html) bevat een aantal meer gedetailleerde interactieve kaarten.
+
+:::

@@ -20,9 +20,22 @@ library(kableExtra)
 library(units)
 library(leaflet.extras)
 library(leaflet.extras2)
+library(htmlwidgets)
+library(htmltools)
 
 conflicted::conflicts_prefer(dplyr::filter)
 options(OutDec = ",")
+
+# om legende links uit te lijnen in leaflet
+legend_css <- tags$style(HTML("
+  .leaflet-control-legend, .info.legend {
+    text-align: left !important;
+  }
+  .info.legend i {
+    float: left !important;
+    margin-right: 8px !important;
+  }
+"))
 ```
 
 ```{r}
@@ -176,13 +189,7 @@ Grote zeggevegetaties vormen het deel van het potentieel leefgebied waar de kans
 In een latere fase werden ook nog gebieden toegevoegd aan de inhaalslag waar de soort in het verleden werd waargenomen, maar niet meer in de afgelopen zes jaar.
 Voor die gebieden wilden we nagaan of de soort actueel nog aanwezig is.
 
-In @tbl-inhaalslag en @fig-inhaalslag geven we een overzicht van de resultaten van de inhaalslag aan de hand van volgende categorieën:
-
-- aanwezig goedgekeurd: de zeggekorfslak werd waargenomen en een soortenexpert heeft de waarnemingen gevalideerd;
-- afwezig: de zeggekorfslak werd niet waargenomen en er werd op minstens vijf locaties in het gebied gezocht;
-- locatie ongeschikt: het gebied bevat geen geschikt potentieel leefgebied van de zeggekorfslak;
-- locatie ontoegankelijk: geen toestemming om het gebied te betreden of niet mogelijk om het gebied op een veilige manier te onderzoeken;
-- niet onderzocht: het gebied werd niet onderzocht.
+In @tbl-inhaalslag en @fig-inhaalslag geven we een overzicht van de resultaten van de inhaalslag.
 
 ```{r}
 #| label: tbl-inhaalslag
@@ -200,14 +207,13 @@ status_locatie_tbl %>%
   left_join(status_beschrijving, by = "locatie_status") %>%
   rename("Status gebied inhaalslag" = locatie_status, "Aantal gebieden" = n, "Beschrijving" = status_beschrijving) %>%
   kbl(booktabs = TRUE) %>%
-  kable_styling(full_width = FALSE) %>%
-  column_spec(3, width = "6cm")
+  kable_styling() %>%
+  column_spec(3, width = "9cm")
 ```
 
-```{r}
+```{r fig.height = ifelse(is_html_output(), 3.5, 4)}
 #| label: fig-inhaalslag
 #| fig-cap: Resultaten inhaalslag
-#| fig-height: 4
 
 status_locatie_point <- status_locatie_point %>%
   mutate(show_facet = ifelse(locatie_status == "niet onderzocht", "Niet bezocht", "Bezocht"))
@@ -225,7 +231,8 @@ if (is_html_output()) {
     addTiles() %>%
     addCircleMarkers(label = ~locatie, color = ~factpal(locatie_status)) %>%
     addLegend(pal = factpal, values = ~locatie_status, opacity = 1,
-              title = "Status locatie inhaalslag", )
+              title = "Status locatie inhaalslag") %>%
+    prependContent(legend_css)
 } else {
   
   ggplot() +
@@ -241,9 +248,9 @@ if (is_html_output()) {
     scale_shape_manual(values = c(16, 17, 15, 3, 16)) +
     scale_size_manual(values = c(3, 3, 3, 3, 1)) +
     scale_alpha_manual(values = c(0.8, 0.8, 0.8, 0.8, 0.3)) +
-    theme_void() +
+    theme_bw() +
     theme(legend.position = "bottom",
-          legend.justification = "left",
+          legend.justification = "right",
           legend.direction = "vertical")
 
 }
@@ -270,6 +277,15 @@ Hiervoor heeft men tijdens het veldwerk ook een zeef en sorteerbakken nodig.
 De zeefgegevens worden apart genoteerd.
 Op basis van de zeefgegevens kan men een betere inschatting maken over de aanwezige aantallen op de locatie.
 Maar de zeefgegevens zullen niet gebruikt worden voor een trendbepaling, omdat het niet haalbaar is om op elke meetnetlocatie een zeefstaal te nemen. 
+
+::: {#fig-zk2 layout-ncol="2" layout-valign="bottom"}
+
+![© D Dutrey](images/zeggekorfslak_d_dutrey.jpg){height="4.5cm"}
+
+![© Nataël Adam](images/zeggekorfslak_natael_adam.png){height="4.5cm"}
+
+Zeggekorfslak
+:::
 
 ####	Benodigd materiaal
 
@@ -311,8 +327,8 @@ De bemonstering vindt plaats in de volgende periodes:
 -   maart – april
 -   oktober - november
 
-Deze periodes worden als optimaal beschouwd, gezien dan de meeste kans bestaat op vochtige omstandigheden (hoger waterpeil) met minimale kans op vorst. 
-Bij herhaling van de monitoring in een hok wordt steeds in dezelfde periode gezocht te worden als de vorige bemonstering
+Deze periodes worden als optimaal beschouwd, gezien dan de meeste kans bestaat op vochtige omstandigheden (hoger waterpeil) met minimale kans op vorst.
+Bij herhaling van de monitoring in een hok moet steeds in dezelfde periode gezocht worden als de vorige bemonstering.
 
 #### Bemonstering op locatie
 
@@ -322,11 +338,11 @@ Deze kunnen lineair aanwezig zijn langs sloten of plassen, of grotere vegetaties
 
 Verlies geen tijd door op weg naar de verschillende punten, verspreid in het hok, te zoeken naar zeggekorfslak, tenzij je deze locatie als zeer kansrijk beschouwt.
 In dit geval registreer je deze als een bemonsteringspunt.
-Het is de bedoeling dat de bemonsterde punten min of meer verspreid in het hok liggen, zeker als er voldoende kansrijke locaties aanwezig zijn (zie de linker afbeelding in @fig-hok).
+Het is de bedoeling dat de bemonsterde punten min of meer verspreid in het hok liggen, zeker als er voldoende kansrijke locaties aanwezig zijn (zie de linker afbeelding in @fig-hok-zk).
 Indien er weinig voldoende kansrijke locaties voorhanden zijn, is het wel toegestaan om de vijf punten dichter bij elkaar te leggen. 
 
 ```{r}
-#| label: fig-hok
+#| label: fig-hok-zk
 #| fig-cap: "Goede spreiding van de bemonsteringspunten in het potentieel leefgebied binnen een 250 m x 250 m hok (links). Slechte spreiding van de bemonsteringspunten (rechts)"
 
 include_graphics("images/nauwe_korfslak_fig1.png")
@@ -336,18 +352,11 @@ Bemonsteren van een kansrijke puntlocatie houdt minstens een visuele inspectie i
 
 -   Neem eerst een overzichtsfoto van het bemonsteringspunt.
 -   Stel je klok in en laat een alarm afgaan na 30 minuten.
--   Op de locatie zoek je naar zeggekorfslakken in een straal van 5 meter (bij lijnvormige vegetaties: 80 m²) en binnen de tijdlimiet.
-Dit doe je vooral door de planten, bij voorkeur grote zegges, plant na plant af te speuren.
+-   Op de locatie zoek je naar zeggekorfslakken in een straal van 5 meter (bij lijnvormige vegetaties: 80 m²) en binnen de tijdlimiet. Dit doe je vooral door de planten, bij voorkeur grote zegges, plant na plant af te speuren.
 Bekijk hiervoor vooral de bovenkant van bladeren  nabij het tongetje.
 Neem het blad vast en trek het blad wat los van de plant. Bekijk ook verdorde bladeren en stengels aan de basis van planten.
 -   Controleer bij minstens één dier per plant met een loep of het de zeggekorfslak is.
--   Turf het aantal gevonden zeggekorfslakken.
-Onderscheid volwassen en juveniele levende dieren, lege huisjes en (sub)fossiele huisjes.
-Om volwassen en juveniele dieren te onderscheiden kijk je naar de afmetingen en de ontwikkeling van de mondrand van de schelp.
-Subfossiele of fossiele huisjes zijn vaak verkleurd en ondoorschijnend, terwijl recente huisjes glanzend en doorschijnend zijn.
-Je noteert enkel het aantal gevonden slakken of huisjes binnen de tijdslimiet.
-Ook al kan het tellen van grote aantallen zeggekorfslakken veel tijd innemen, de tijdslimiet moet worden gerespecteerd en gaat boven het doorzoeken van het volledige bemonsteringspunt.
-Aantallen worden niet geëxtrapoleerd in functie van niet onderzochte oppervlakte.
+-   Turf het aantal gevonden zeggekorfslakken. Onderscheid volwassen en juveniele levende dieren, lege huisjes en (sub)fossiele huisjes. Om volwassen en juveniele dieren te onderscheiden kijk je naar de afmetingen en de ontwikkeling van de mondrand van de schelp. Subfossiele of fossiele huisjes zijn vaak verkleurd en ondoorschijnend, terwijl recente huisjes glanzend en doorschijnend zijn. Je noteert enkel het aantal gevonden slakken of huisjes binnen de tijdslimiet. Ook al kan het tellen van grote aantallen zeggekorfslakken veel tijd innemen, de tijdslimiet moet worden gerespecteerd en gaat boven het doorzoeken van het volledige bemonsteringspunt. Aantallen worden niet geëxtrapoleerd in functie van niet onderzochte oppervlakte.
 -   Zorg ervoor dat je binnen het halfuur het bemonsteringspunt goed hebt doorzocht.
 In het geval dat het tellen van de slakken veel tijd in beslag neemt (bv. honderden exemplaren) primeert altijd de tijdslimiet en worden de aantallen niet geëxtrapoleerd.
 -   Na het afgaan van het alarm registreer je alle waarnemingen.
@@ -390,20 +399,20 @@ Om te bepalen welke steekproefeenheden tot het steekproefkader behoren, gebruike
 
 **Verspreidingsdata**
 
-De verspreidingsdata van de zeggekorfslak waar we gebruik van maken (@fig-all-data) zijn:
+De verspreidingsdata van de zeggekorfslak waar we gebruik van maken (@fig-all-data-zk) zijn:
 
 -   de gegevens ingezameld in de periode 2018 - 2024 via de inhaalslag ([@sec-inhaalslag]) en ingevoerd in [meetnetten.be](www.meetnetten.be),
 -   alle losse waarnemingen ingevoerd in [waarnemingen.be](www.waarnemingen.be) in de periode 2005 - 2025.
 
 ```{r}
-#| label: fig-all-data
+#| label: fig-all-data-zk
 #| fig-cap: Overzicht van de (punt)locaties waar zeggekorfslak werd waargenomen in de periode 2005 - 2025
 #| fig-height: 2.5
 
 ggplot() +
   geom_sf(data = flanders, colour = "grey", alpha = 0.02) +
   geom_sf(data = aanwezig, alpha = 0.6, size = 3) +
-  theme_void()
+  theme_bw()
 
 ```
 
@@ -415,6 +424,8 @@ data_all %>%
   st_write("../output/data_zeggekorfslak.gpkg")
 ```
 
+\needspace{10mm}
+
 **Potentieel leefgebied**
 
 @packet_2018 definiëren het potentieel leefgebied van de zeggekorfslak als een lijst van vegetatietypes in de Biologische Waarderingskaart (BWK) [@de_saeger_2023].
@@ -423,7 +434,8 @@ Een deel van deze vegetatietypes maakt enkel deel uit van het potentieel leefgeb
 
 ```{r}
 #| label: tbl-leefgebied-zk
-#| tbl-cap: Vegetatietypes die het potentieel leefgebied van de zeggekorfslak definiëren. Een deel van deze vegetatietypes maken enkel deel uit van het potentieel leefgebied als ze binnen een buffer van 100 meter rond grote zeggevegetaties (mc) liggen. 
+#| tbl-cap: Vegetatietypes die het potentieel leefgebied van de zeggekorfslak definiëren. Een deel van deze vegetatietypes maakt enkel deel uit van het potentieel leefgebied als ze binnen een buffer van 100 meter rond grote zeggevegetaties (mc) liggen.
+#| html-table-processing: none
 
 tbl_leefgebied <- data.frame(code = c("mc", "mr", "vn", "vm", "md", "hfc", "mk", "mp", "sf", "va", "vc", "hc"),
                              Vegetatietype = c("Grote zeggenvegetaties", "Rietland", "Nitrofiel alluviaal elzenbos", "Elzenbroek", "Drijfzoom en/of drijftil", "Moerasspirearuigte", "Alkalisch laagveen", "Duinpanvegetaties", "Vochtig wilgenstruweel op voedselrijke bodem", "Alluviaal elzen-essenbos", "Bronbos", "Dotterbloemgrasland"),
@@ -537,7 +549,7 @@ if (is_html_output()) {
     select("BWK-code hoofdgroep" = code_leefgebied_strikt, "Geselecteerde codes uit BWK en oppervlakte" = bwk_codes) %>%
     kbl(booktabs = TRUE) %>%
     kable_styling(font_size = ifelse(is_html_output(), 13, 8)) %>%
-    column_spec(1, width = "2cm") %>%
+    column_spec(1, width = "1.5cm") %>%
     column_spec(2, width = "12cm")
 ```
 
@@ -684,6 +696,8 @@ steekproefkader_hok <- full_grid %>%
 
 ```
 
+\needspace{300mm}
+
 **Kenmerken per 250 x 250 m hok**
 
 Voor elk 250 x 250 m hok in Vlaanderen bepalen we onderstaande kenmerken.
@@ -804,6 +818,8 @@ steekproefkader_kenm <- steekproefkader_hok_aanwezig %>%
 
 ```
 
+\needspace{50mm}
+
 **Selectie 250 m x 250 m hokken in steekproefkader**
 
 Vooraleer we een steekproef trekken, moeten we bepalen welke hokken tot het steekproefkader behoren.
@@ -862,8 +878,13 @@ steekproefkader_select <- steekproefkader_basis %>%
 @tbl-overzicht-sk geeft het aantal hokken voor de verschillende categorieën (Basis, Uitbreiding 1 en Uitbreiding 2).
 De ligging van (de centroïde van) de hokken geven we weer in @fig-steekproefkader.
 De kleur geeft aan hoeveel potentieel leefgebied er zich in het hok bevindt.
+
+::: {.content-hidden when-format="html"}
+
 Sommige hokken werden geselecteerd op basis van de aanwezigheid van zeggekorfslak, maar bevatten geen potentieel leefgebied volgens de BWK.
 Deze hokken zijn aangeduid met een driehoekjes.
+
+:::
 
 ```{r}
 #| label: tbl-overzicht-sk
@@ -886,10 +907,9 @@ overzicht_hokken_steekproefkader %>%
 
 ```
 
-```{r}
+```{r fig.height= ifelse(is_html_output(), 4.5, 6)}
 #| label: fig-steekproefkader
 #| fig.cap: Overzicht hokken steekproefkader
-#| fig.height: 8
 #| warning: false
 #| message: false 
 
@@ -902,19 +922,19 @@ steekproefkader_select_centroid <- steekproefkader_select %>%
 
 if (is_html_output()) {
   
-  qpal <- colorNumeric(palette = "Greens", steekproefkader_select_centroid$prop_leefgebied)
+  qpal <- colorQuantile(palette = "Greens", steekproefkader_select_centroid$prop_leefgebied, n = 5)
   fpal <- colorFactor(c("yellow", "red", "blue"), steekproefkader_select_centroid$type_selectie)
   
   steekproefkader_select_centroid %>%
     st_transform(crs = 4326) %>%
     leaflet() %>%
-    
+    addTiles() %>%
     addCircleMarkers(fillColor = ~qpal(prop_leefgebied), fillOpacity = 0.8, 
                      color = ~fpal(type_selectie), weight = 2, opacity = 0.9,
                      label = ~str_c("Aantal = ", tot_aantal, "; Prop. leefgebied = ", prop_leefgebied)) %>%
-    addLegend(pal = qpal, values = ~prop_leefgebied, title = "Proportie </br> potentieel leefgebied",
-              opacity = 1) %>%
-    addLegend(pal = fpal, values = ~type_selectie, opacity = 1, title = "Categorie")
+    addLegend(pal = fpal, values = ~type_selectie, opacity = 1, title = "Categorie") %>%
+    addLegend(pal = qpal, values = ~prop_leefgebied, title = "Proportie </br> potentieel </br> leefgebied",
+              opacity = 1)
   
 } else {
   
@@ -924,20 +944,13 @@ if (is_html_output()) {
           aes(colour = prop_leefgebied, shape = leefgebied_aanwezig), size = 3, alpha = 0.8) +
   scale_colour_gradient(low = "yellow", high = "darkgreen", limits = c(0, 1)) +
   facet_wrap(~type_selectie, ncol = 1) +
-  labs(colour = "Proportie potentieel leefgebied",
-       shape = "Potentieel leefgebied aanwezig?") +
-  theme_bw() +
-  theme(legend.position = "bottom",
-        legend.direction = "vertical",
-        axis.text = element_blank(),
-        axis.ticks = element_blank(),
-        panel.grid = element_blank())
+  labs(colour = "Proportie \npotentieel \nleefgebied",
+       shape = "Potentieel \nleefgebied \naanwezig?") +
+  theme_bw()
 
 }
 
 ```
-
-
 
 ```{r}
 #| label: select-sk
@@ -973,6 +986,8 @@ rbb_mc_steekproefkader <- leefgebied_rbbmc %>%
 
 Na manuele controle van de hokken in 'Uitbreiding 2', besluiten we dat deze hokken een zeer lage kans op aanwezigheid van zeggekorfslak hebben.
 We weerhouden dus enkel de 'Basis' en 'Uitbreiding 1' hokken in het steekproefkader.
+
+\needspace{70mm}
 
 #### Steekproeftrekking
 
@@ -1157,12 +1172,11 @@ steekproef_meetnetten %>%
 @fig-steekproef toont de ligging van de meetnetlocaties onderverdeeld per ecoregio.
 Een meer gedetailleerde interactieve kaart is te vinden in de websiteversie van dit rapport via [deze link](https://www.vlaanderen.be/inbo/rapporten/monitoringsprotocol_mollusken/zeggekorfslak.html).
 
-```{r}
+```{r fig.height = ifelse(is_html_output(), 4, 6.5)}
 #| label: fig-steekproef
 #| fig.cap: Overzicht 250 m x 250 m hokken in het meetnet zeggekorfslak
 #| message: false
 #| warning: false
-#| fig-height: 7
 
 steekproef <- steekproef %>%
   mutate(periode = ifelse(panel == 1, "2025-2027", "2028-2030"))
@@ -1171,12 +1185,14 @@ ggplot() +
   geom_sf(data = flanders, colour = "grey", alpha = 0.3) +
   geom_sf(data = steekproef %>%
             st_centroid(), 
-          aes(colour = type_selectie), size = 3, alpha = 0.8) +
-  labs(colour = "Categorie") + 
+          aes(colour = type_selectie, shape = type_selectie), size = 3, alpha = 0.5) +
+  labs(colour = "Categorie", shape = "Categorie") + 
   facet_wrap(~ecoregio, ncol = 2, ,labeller = label_wrap_gen(width = 40)) +
   theme_bw() +
+  scale_color_manual(values = colourscale) +
   theme(legend.position = "bottom",
         legend.direction = "vertical",
+        legend.justification = "right",
         axis.text = element_blank(),
         axis.ticks = element_blank(),
         panel.grid = element_blank())

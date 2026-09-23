@@ -20,9 +20,22 @@ library(kableExtra)
 library(units)
 library(leaflet.extras)
 library(leaflet.extras2)
+library(htmlwidgets)
+library(htmltools)
 
 conflicted::conflicts_prefer(dplyr::filter)
+options(OutDec = ",")
 
+# om legende links uit te lijnen in leaflet
+legend_css <- tags$style(HTML("
+  .leaflet-control-legend, .info.legend {
+    text-align: left !important;
+  }
+  .info.legend i {
+    float: left !important;
+    margin-right: 8px !important;
+  }
+"))
 ```
 
 ```{r}
@@ -103,11 +116,7 @@ Op basis van de kaart met het potentieel leefgebied werden er in @packet_2018 14
 Naar aanleiding van de inhaalslag werden nieuwe en historische telgegevens ingevoerd in waarnemingen.be.
 Bijkomend werden er gegevens aangeleverd van het Slak-in-Du project van de Koninklijke Belgische Vereniging voor Conchyliologie [@severijns_2013].
 
-In @tbl-inhaalslag en @fig-inhaalslag geven we een overzicht van de resultaten van de inhaalslag aan de hand van volgende categorieën:
-
-- aanwezig goedgekeurd: de nauwe korfslak werd waargenomen en een soortenexpert heeft de waarnemingen gevalideerd;
-- aanwezig niet gevalideerd: de nauwe korfslak werd waargenomen maar geen validatie mogelijk van de waarneming (foto ontbreekt);
-- niet onderzocht: het gebied werd niet onderzocht.
+In @tbl-inhaalslag-nk en @fig-inhaalslag-nk geven we een overzicht van de resultaten van de inhaalslag.
 
 ```{r}
 #| label: tbl-inhaalslag-nk
@@ -122,7 +131,7 @@ status_locatie_tbl %>%
   rename("Status gebied inhaalslag" = locatie_status, "Aantal gebieden" = n, Beschrijving = status_beschrijving) %>%
   kbl(booktabs = TRUE) %>%
   kable_styling() %>%
-  column_spec(3, width = "6cm")
+  column_spec(3, width = "9cm")
 ```
 
 
@@ -130,7 +139,7 @@ status_locatie_tbl %>%
 ```{r}
 #| label: fig-inhaalslag-nk
 #| fig-cap: Kaart met de status van de inhaalslaglocaties voor nauwe korfslak
-#| fig-height: 5
+#| fig-height: 4
 
 flanders <- read_admin_areas(dsn = "provinces")
 theme_set(theme_bw())
@@ -147,7 +156,8 @@ if (is_html_output()) {
     addTiles() %>%
     addCircleMarkers(label = ~location, color = ~factpal(locatie_status)) %>%
     addLegend(pal = factpal, values = ~locatie_status, opacity = 1,
-              title = "Status locatie inhaalslag", )
+              title = "Status locatie inhaalslag") %>%
+    prependContent(legend_css)
   
   
 } else {
@@ -175,8 +185,17 @@ if (is_html_output()) {
 
 #### Algemeen
 
-Binnen de steekproefeenheid (een hok van 250 m x 250 m) worden op minimaal vijf kansrijke locaties gezocht naar nauwe korfslak gedurende een vaste tijdsperiode van ongeveer 3 uur of ongeveer een halfuur per kansrijke locatie.
+Binnen de steekproefeenheid (een hok van 250 m x 250 m) wordt op minimaal vijf kansrijke locaties gezocht naar nauwe korfslak gedurende een vaste tijdsperiode van ongeveer 3 uur of ongeveer een halfuur per kansrijke locatie.
 Op deze manier kunnen er op 1 dag twee hokken worden onderzocht.
+
+::: {#fig-nk layout-ncol="2" layout-valign="bottom"}
+
+![© Marco Vicariotto](images/nauwe_korfslak_marco_vicariotto2.jpg){height="5cm"}
+
+![© Eryk Miksa](images/nauwe_korfslak_eryk_miksa.jpg){height="5cm"}
+
+Nauwe korfslak
+:::
 
 ####	Benodigd materiaal
 
@@ -238,7 +257,7 @@ Het bemonsteren van een kansrijke puntlocatie wordt geïllustreerd in onderstaan
 
 ::: {.content-hidden when-format="html"}
 
-Het bemonsteren van een kansrijke puntlocatie wordt geïllustreerd [deze video](https://www.youtube.com/watch?v=mJtjMGPu0U0).
+Het bemonsteren van een kansrijke puntlocatie wordt geïllustreerd in [deze video](https://www.youtube.com/watch?v=mJtjMGPu0U0).
 
 :::
 
@@ -265,7 +284,7 @@ Wanneer de sorteerbak eenmaal grondig is doorzocht stopt het zoeken. Houd de gev
 -   Als er tijd over is herhaal je deze procedure op een ander punt tot er een halfuur voorbij is.
 Blijf hierbij binnen een cirkel met een straal van ongeveer 5 m vanaf het gelokaliseerde punt.
 Als meerdere personen bemonsteren, blijven ze binnen deze straal.
--   De gevonden nauwe korfslakken worden bijgehouden totdat het halfuur verstreken is en de registratie de registratie van de gegevens is afgerond.
+-   De gevonden nauwe korfslakken worden bijgehouden totdat het halfuur verstreken is en de registratie van de gegevens is afgerond.
 Daarna kunnen de slakken terug op de locatie achtergelaten worden.
 
 ### Selectie steekproeflocaties
@@ -299,7 +318,7 @@ aantallen_nauwekorfslak_sf <- aantallen_nauwekorfslak %>%
 ggplot() +
   geom_sf(data = flanders, colour = "grey", alpha = 0.02) +
   geom_sf(data = aantallen_nauwekorfslak_sf, alpha = 0.6, size = 3) +
-  theme_void()
+  theme_bw()
 
 ```
 
@@ -310,6 +329,8 @@ ggplot() +
 aantallen_nauwekorfslak_sf %>%
   st_write("output/data_nauwe_korfslak.gpkg")
 ```
+
+\needspace{10mm}
 
 **Potentieel leefgebied**
 
@@ -332,6 +353,7 @@ types_leefgebied <- types %>%
 ```{r}
 #| label: tbl-leefgebied-nauwe-korfslak
 #| tbl-cap: Vegetatietypes die het potentieel leefgebied van de nauwe korfslak definiëren
+#| html-table-processing: none
 
 leefgebied_nauwe_korfslak <- data.frame(Databron =  c(rep("BWK", 9), rep("Habitatkaart", 8)),
                                        Code = c("hd", "ls", "mp", "ru", "sd", "n", "gml", "da", "mr", "1330_da", "2130", "2160", "2170", "2180", "2190", "rbbmr", "91E0"),
@@ -343,22 +365,42 @@ leefgebied_nauwe_korfslak <- data.frame(Databron =  c(rep("BWK", 9), rep("Habita
                                                          "Loofhoutaanplant (exclusief populier)",
                                                          "Gemengd loofhout",
                                                          "Schorre",
-                                                         "Rietland en andere vegetaties van het rietverbon",
+                                                         "Rietland en andere vegetaties van het rietverbond",
                                                          "Buitendijkse schorren",
                                                          "Vastgelegde kustduinen met kruidvegetatie",
-                                                         "Duinen met *Hippophaë rhamnoides*",
-                                                         "Duinen met *Salix repens* ssp. argentea",
+                                                         "Duinen met _starti_Hippophaë rhamnoides_stopi_",
+                                                         "Duinen met _starti_Salix repens_stopi_ ssp. argentea",
                                                          "Beboste duinen van het Atlantische, continentale en boreale gebied",
                                                          "Vochtige duinvalleien",
                                                          "Rietland en andere vegetatie van het rietverbond",
-                                                         "Bossen op alluviale grond met *Alnus glutinosa* en *Fraxinus excelsior*"
+                                                         "Bossen op alluviale grond met _starti_Alnus glutinosa_stopi_ en _starti_Fraxinus excelsior_stopi_"
                                                          )
 )
 
-leefgebied_nauwe_korfslak %>%
-    kbl(booktabs = TRUE) %>%
-  kable_styling() %>%
-  collapse_rows(1)
+if (is_html_output()) {
+  
+  
+  leefgebied_nauwe_korfslak %>%
+    mutate(Vegetatietype = str_replace_all(Vegetatietype, pattern = "_starti_", replacement = "<i>"),
+           Vegetatietype = str_replace_all(Vegetatietype, pattern = "_stopi_", replacement = "</i>")) %>%
+    kbl(booktabs = TRUE,
+      escape = FALSE,
+      format = "html") %>%
+    kable_styling()
+  
+} else {
+  
+ leefgebied_nauwe_korfslak %>%
+    mutate(Vegetatietype = str_replace_all(Vegetatietype, pattern = "_starti_", replacement = "\\\\textit{"),
+           Vegetatietype = str_replace_all(Vegetatietype, pattern = "_stopi_", replacement = "}"),
+           Code = str_replace(Code, pattern = "1330_da", replacement =  "1330\\\\_da")) %>%
+    kbl(booktabs = TRUE,
+       escape = FALSE,
+       format = "latex") %>%
+     kable_styling()
+
+  }
+
 ```
 
 De polygonen die geselecteerd werden op basis van de BWK-codes overlappen grotendeels met deze op basis van de Habitat- en RBB-codes. 
@@ -513,7 +555,7 @@ voorkomen_leefgebied_ecoregio %>%
   collapse_rows(1)
 ```
 
-\\needspace{30mm}
+\needspace{30mm}
 
 Voor de observaties die in polygonen liggen met (deels) N2000-habitat of RBB, geven we in @tbl-voorkomen-type:
 
@@ -652,9 +694,6 @@ steekproefkader_hok <- full_grid %>%
 
 ```
 
-
-\needspace{150mm}
-
 **Selectie 250 m x 250 m hokken in steekproefkader**
 
 Vooraleer we een steekproef trekken moeten we bepalen welke hokken tot het steekproefkader behoren.
@@ -745,12 +784,11 @@ overzicht_hokken_steekproefkader %>%
 
 \needspace{150mm}
 
-```{r}
+```{r fig.height = ifelse(is_html_output(), 4, 7)}
 #| label: fig-steekproefkader-nk
 #| fig.cap: Overzicht hokken steekproefkader nauwe korfslak
 #| warning: false
-#| message: false 
-#| fig.height: 7
+#| message: false
 
 if (is_html_output()) {
   
@@ -758,7 +796,7 @@ if (is_html_output()) {
   mutate(waarneming_nk = ifelse(aanwezig_hok, "Ja", "Nee"),
          waarneming_nk = factor(waarneming_nk, levels = c("Ja", "Nee")))
   
-  qpal <- colorNumeric(palette = "Greens", steekproefkader_grid$prop_leefgebied, domain = c(0,1))
+  qpal <- colorQuantile(palette = "Greens", steekproefkader_grid$prop_leefgebied, n = 5)
   fpal <- colorFactor(c("yellow", "darkgrey"), steekproefkader_grid$waarneming_nk)
   
   steekproefkader_grid %>%
@@ -768,9 +806,9 @@ if (is_html_output()) {
     addCircleMarkers(fillColor = ~qpal(prop_leefgebied), fillOpacity = 0.8, 
                      color = ~fpal(waarneming_nk), weight = 2, opacity = 0.9,
                      label = ~str_c("Aantal = ", aantal_hok, "; Prop. leefgebied = ", prop_leefgebied)) %>%
-    addLegend(pal = qpal, values = ~prop_leefgebied, title = "Proportie potentieel leefgebied",
+    addLegend(pal = qpal, values = ~prop_leefgebied, title = "Proportie </br> potentieel leefgebied",
               opacity = 1) %>%
-    addLegend(pal = fpal, values = ~waarneming_nk, opacity = 1, title = "Waarneming nauwe korfslak?")
+    addLegend(pal = fpal, values = ~waarneming_nk, opacity = 1, title = "Waarneming </br> nauwe korfslak?")
   
 } else {
   
@@ -781,13 +819,10 @@ if (is_html_output()) {
           aes(colour = prop_leefgebied), size = 3, alpha = 0.8) +
   scale_colour_gradient(low = "yellow", high = "darkgreen", limits = c(0,1)) +
   facet_wrap(~aanwezig_hok, ncol = 1) +
-  labs(colour = "Proportie potentieel leefgebied") +
+  labs(colour = "Proportie \npotentieel \nleefgebied") +
   lims(x = c(st_bbox(flanders)["xmin"], st_bbox(flanders)["xmax"] - 150000),
        y = c(st_bbox(flanders)["ymin"] + 25000, st_bbox(flanders)["ymax"])) +
-  theme_bw() +
-  theme(legend.position = "bottom",
-        legend.direction = "vertical",
-        legend.justification = "left")
+  theme_bw()
   
 }
 ```
@@ -803,7 +838,7 @@ aantallen_nauwekorfslak_sf %>%
 #### Steekproeftrekking
 
 Net zoals bij de zeggekorfslak maken we gebruik van een ruimtelijk gebalanceerde steekproef op basis van het Generalized Random Tessellation Stratified (GRTS) algoritme [@stevens_2004].
-De implementatie gebeurt via het R-package `grtdsdb` [@onkelinx_2022].
+De implementatie gebeurt via het R-package `grtsdb` [@onkelinx_2022].
 We maken eerst een grid van 250 m x 250 m dat Vlaanderen volledig bedekt.
 Vervolgens kennen we een uniek GRTS-rangnummer toe aan elke gridcel.
 De rangnummers van het volledige grid worden opgeslagen in de database `grts.sqlite`.
@@ -906,18 +941,19 @@ Een meer gedetailleerde interactieve kaart is te vinden in de websiteversie van 
 #| fig.cap: Overzicht 250 m x 250 m hokken in het meetnet nauwe korfslak in de Ecoregio van de kustduinen
 #| message: false
 #| warning: false
-#| fig-height: 4
+#| fig-height: 4.5
 
 ggplot() +
   geom_sf(data = flanders, colour = "grey", alpha = 0.3) +
   geom_sf(data = steekproef_finaal %>%
             filter(str_detect(ecoregio, "kustduinen")), 
-          aes(colour = type_selectie), size = 3, alpha = 0.6) +
-  labs(colour = "Categorie") + 
+          aes(colour = type_selectie, shape = type_selectie), size = 3, alpha = 0.6) +
+  labs(colour = "Categorie", shape = "Categorie") + 
   facet_wrap(~ecoregio, ncol = 2, labeller = label_wrap_gen(width = 40)) +
   lims(x = c(st_bbox(flanders)["xmin"], st_bbox(flanders)["xmax"] - 150000),
        y = c(st_bbox(flanders)["ymin"] + 25000, st_bbox(flanders)["ymax"])) +
   theme_bw() +
+  scale_color_manual(values = colourscale) +
   theme(legend.position = "bottom",
         legend.direction = "vertical")
 
@@ -928,20 +964,17 @@ ggplot() +
 #| fig.cap: Overzicht 250 m x 250 m hokken in het meetnet nauwe korfslak in de overige ecoregio's
 #| message: false
 #| warning: false
-#| fig-height: 4
+#| fig-height: 4.5
 
 ggplot() +
   geom_sf(data = flanders, colour = "grey", alpha = 0.3) +
   geom_sf(data = steekproef_finaal %>%
             filter(!str_detect(ecoregio, "kustduinen")), 
-          aes(colour = type_selectie), size = 3, alpha = 0.6) +
+          shape = 17, colour = colourscale[2], size = 3, alpha = 0.6) +
   labs(colour = "Categorie") + 
   facet_wrap(~ecoregio, ncol = 1, labeller = label_wrap_gen(width = 40)) +
   theme_bw() +
-  theme(legend.position = "hide",
-        axis.text = element_blank(),
-        axis.ticks = element_blank(),
-        panel.grid = element_blank())
+  theme(legend.position = "hide")
 ```
 
 :::
@@ -995,6 +1028,7 @@ steekproefkader_hok_show  %>%
 
 :::
 
+\needspace{360mm}
 
 ### Gegevensinvoer
 

@@ -32,9 +32,9 @@ De hokken worden geteld in een meetcyclus van zes jaar, waarbij elk jaar tien ho
 De bemonstering van een hok gebeurt door vijf kansrijke puntlocaties te selecteren binnen het hok op basis van een kaart van het potentieel leefgebied.
 Op elke puntlocatie wordt gedurende 30 minuten binnen een cirkel met een straal van vijf meter het aantal individuen van nauwe korfslak of zeggekorfslak geteld.
 Bij de nauwe korfslak wordt mos, strooisel en het bovenste deel van de bodem verzameld en gezeefd.
-De fractie tussen 0.5 mm en 2 mm wordt opgevangen in een sorteerbak en grondig nagekeken op de aanwezigheid van nauwe korfslak.
+De fractie tussen 0,5 mm en 2 mm wordt opgevangen in een sorteerbak en grondig nagekeken op de aanwezigheid van nauwe korfslak.
 De telling van zeggekorfslak gebeurt door visueel levende en dode bladeren te inspecteren in vegetatie die onderdeel uitmaakt van het potentieel leefgebied.
-In www.meetnetten.be registreert men per puntlocatie het aantal getelde levende adulten, levende juvenielen en (sub)fossielen
+Via www.meetnetten.be registreert men per puntlocatie het aantal getelde levende adulten, levende juvenielen en (sub)fossielen.
 
 De eerste meetcyclus loopt van 2024 tot 2029 bij de nauwe korfslak en van 2025 tot 2030 bij de zeggekorfslak.
 

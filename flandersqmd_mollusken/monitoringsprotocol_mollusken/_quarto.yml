@@ -26,7 +26,7 @@ flandersqmd:
   level: 2
   title: Monitoringsprotocol nauwe korfslak en zeggekorfslak
   subtitle: Versie 2.0
-  shorttitle: monitoringsprotocol-korfslakken
+  shorttitle: monitoringsprotocol-mollusken
   author:
   - name:
       given: Toon
@@ -92,7 +92,7 @@ flandersqmd:
   reportnr: 55
   doi: 10.21436/inbor.152228551
   year: 2026
-  coverdescription: 'Telling Nauwe korfslak'
+  coverdescription: 'Telling nauwe korfslak'
 book:
   downloads: pdf
   open-graph: true
