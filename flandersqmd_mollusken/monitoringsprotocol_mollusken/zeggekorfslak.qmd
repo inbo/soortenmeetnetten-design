@@ -993,18 +993,19 @@ We weerhouden dus enkel de 'Basis' en 'Uitbreiding 1' hokken in het steekproefka
 
 We maken gebruik van een ruimtelijk gebalanceerde steekproef op basis van het Generalized Random Tessellation Stratified (GRTS) algoritme [@stevens_2004].
 De implementatie gebeurt via het R-package `grtsdb` [@onkelinx_2022].
-We maken eerst een grid van 250 m x 250 m dat Vlaanderen volledig bedekt.
-Vervolgens kennen we een uniek GRTS-rangnummer toe aan elke gridcel.
-De rangnummers van het volledige grid worden opgeslagen in de database `grts.sqlite`.
-Hierdoor kunnen we de steekproef reproduceren.
 
-We opteren voor een totale steekproefgrootte van 60 hokken. Deze worden verspreid in een meetcyclus van zes jaar geteld.
+Het GRTS algoritme kent een uniek rangnummer toe aan elk 250 m x 250 m hok in Vlaanderen.
+Al deze rangnummers worden opgeslagen in de database `grts.sqlite`, zodat de steekproef reproduceerbaar is.
+We kennen dus ook rangnummers toe aan de hokken die niet tot het steekproefkader behoren.
+Dat doen we omdat het steekproefkader in de toekomst kan wijzigen.
+
+We wensen om een steekproef van 60 hokken te selecteren uit het steekproefkader.
+Deze hokken worden verspreid in een meetcyclus van zes jaar geteld.
 Elk jaar worden er dus tien hokken geteld.
 
-We willen met de steekproef ook een goed zicht krijgen op de verspreiding van de soort.
-Daarom passen we een gestratificeerde steekproef toe op basis van de ecoregio's.
-We selecteren een aantal hokken per ecoregio op basis van de relatieve ranking binnen de ecoregio.
-De steekproefgrootte per ecoregio is evenredig met het aantal hokken per ecoregio in het steekproefkader (@tbl-overzicht-ecoregio).
+Om een goed zicht te krijgen op de spreiding van de soort, passen we een stratificatie toe op basis van de ecoregio's.
+Binnen elke ecoregio rangschikken we de hokken volgens hun relatieve GRTS-rangnummer.
+Het aantal te selecteren hokken per ecoregio is evenredig met het aantal hokken van die ecoregio in het steekproefkader (@tbl-overzicht-ecoregio). Vervolgens selecteren we binnen elke ecoregio de hokken volgens deze rangschikking.
 
 ```{r}
 #| label: strata-ecoregio
@@ -1015,7 +1016,7 @@ overzicht_ecoregio <- steekproefkader_select %>%
   st_drop_geometry() %>%
   mutate(tot_steekproefkader = n(),
          tot_steekproef = sum(steekproef)) %>%
-  group_by(ecoregio) %>%
+  group_by(ecoregio, tot_steekproefkader) %>%
   summarise(n_steekproefkader = n(),
             n_steekproef = sum(steekproef),
             prop_steekproefkader = round(n() / 100, 3),
@@ -1040,17 +1041,19 @@ steekproefkader_select <- steekproefkader_select %>%
 #| html-table-processing: none
 
 overzicht_ecoregio %>%
-  select(Ecoregio = ecoregio, "Hokken in steekproefkader" = n_steekproefkader,
+  select(Ecoregio = ecoregio, "Hokken in steekproefkader" = n_steekproefkader, Proportie = prop_steekproefkader,
          "Hokken in gestratificeerde steekproef" = n_steekproef_stratificatie) %>%
   kbl(booktabs = TRUE) %>%
   kable_styling() %>%
-  column_spec(c(2,3), width = "2.5cm")
+  column_spec(1, width = "5cm") %>%
+  column_spec(c(2,4), width = "3cm")
 ```
 
-Als we hokken selecteren volgens het relatieve GRTS-rangnummer binnen de ecoregio's zien we dat in sommige gebieden relatief veel hokken geselecteerd worden.
-Anderzijds zijn er soms sterk geïsoleerde hokken die niet in de steekproef voorkomen, maar wel van belang zijn om goed zicht te krijgen op de verspreiding.
+Als we de hokken uitsluitend volgens hun relatieve GRTS-rangnummer binnen de ecoregio selecteren, worden in sommige aaneengesloten gebieden veel hokken geselecteerd. Omgekeerd zijn er soms sterk geïsoleerde hokken die bij deze selectie niet worden opgenomen, terwijl deze wel belangrijk kunnen zijn om een goed beeld te krijgen van de verspreiding van de soort.
 
-Daarom doen we volgende (beperkte) manuele optimalisatie om nog een betere spreiding van de steekproef te bekomen:
+Daarom voeren we een beperkte manuele optimalisatie uit.
+Daarbij vervangen we enkele automatisch geselecteerde hokken door andere hokken binnen dezelfde ecoregio.
+Op die manier verbeteren we de ruimtelijke spreiding van de steekproef, zonder de stratificatie over de ecoregio’s wezenlijk te wijzigen:
 
 -   Ecoregio van de zuidoostelijke heuvelzone
 

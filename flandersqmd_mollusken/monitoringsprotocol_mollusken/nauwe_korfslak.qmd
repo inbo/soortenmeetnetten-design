@@ -839,12 +839,14 @@ aantallen_nauwekorfslak_sf %>%
 
 Net zoals bij de zeggekorfslak maken we gebruik van een ruimtelijk gebalanceerde steekproef op basis van het Generalized Random Tessellation Stratified (GRTS) algoritme [@stevens_2004].
 De implementatie gebeurt via het R-package `grtsdb` [@onkelinx_2022].
-We maken eerst een grid van 250 m x 250 m dat Vlaanderen volledig bedekt.
-Vervolgens kennen we een uniek GRTS-rangnummer toe aan elke gridcel.
-De rangnummers van het volledige grid worden opgeslagen in de database `grts.sqlite`.
-Hierdoor kunnen we de steekproef reproduceren.
+Het GRTS algoritme kent een uniek rangnummer toe aan elk 250 m x 250 m hok in Vlaanderen.
+Al deze rangnummers worden opgeslagen in de database `grts.sqlite`, zodat de steekproef reproduceerbaar is.
+We kennen dus ook rangnummers toe aan de hokken die niet tot het steekproefkader behoren.
+Dat doen we omdat het steekproefkader in de toekomst kan wijzigen.
 
-We opteren voor een totale steekproefgrootte van 60 hokken. Deze worden verspreid over een meetcyclus van zes jaar bemonsterd.
+We wensen om een steekproef van 60 hokken te selecteren uit het steekproefkader.
+Dit doen we door de hokken in het steekproefkader met de 60 laagste GRTS-rangnummers te selecteren.
+Deze hokken worden verspreid in een meetcyclus van zes jaar geteld.
 Elk jaar worden er dus tien hokken geteld.
 
 De steekproef verdelen we in twee groepen (op basis van de relatieve ranking):
