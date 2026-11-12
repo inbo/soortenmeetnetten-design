@@ -117,5 +117,6 @@ book:
   - inleiding.qmd
   - zeggekorfslak.qmd
   - nauwe_korfslak.qmd
+  - reproduceerbaarheid.qmd
   - referenties.md
 bibliography: references.bib

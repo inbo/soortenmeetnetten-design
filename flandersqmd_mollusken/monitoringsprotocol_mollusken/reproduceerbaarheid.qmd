@@ -1,0 +1,17 @@
+# Reproduceerbaarheid {#sec-reproduceerbaarheid}
+
+We maken gebruik van de programmeertaal R [@R] om het steekproefkader op te bouwen en de steekproeftrekking uit te voeren.
+De R‐scripts staan onder versiebeheer in de GitHub repository: [inbo/soortenmeetnetten‐design](https://github.com/inbo/soortenmeetnetten-design) en zijn publiek
+toegankelijk.
+Meer specifiek gebeurt de steekproeftrekking via de scripts in [deze folder](https://github.com/inbo/soortenmeetnetten-design/flandersqmd_mollusken/monitoringsprotocol_mollusken) van de repository.
+
+Om de scripts uit te voeren zijn er ook een aantal input gegevens nodig. 
+De gegevens over het voorkomen van de zeggekorfslak en de nauwe korfslak zijn niet publiek beschikbaar omdat het om gevoelige data gaat. 
+Deze gegevens zijn wel beschikbaar via [deze Google Drive folder](https://drive.google.com/drive/u/0/folders/1znfnH9PIsbe1bnL1Quzjm4SsbuMAAJC-), die enkel toegankelijk is op verzoek.
+
+De vegetatiegegevens om het potentieel leefgebied op te maken kunnen ingelezen worden via het `n2khab` package [@vanderhaeghe_2026].
+Volg de instructies in [deze vignette](https://inbo.github.io/n2khab/articles/v020_datastorage.html#getting-started).
+
+Ten slotte, moet ook gebruik gemaakt worden van de databanken `grts_nk.sqlite` en `grts_zk.sqlite` om de selectie van de locaties te reproduceren.
+Deze databanken bevatten de grts-ranking van alle 10 km hokken in Vlaanderen op basis waarvan de steekproeftrekking gebaseerd is.
+De databanken zijn beschikbaar via Zenodo: 
