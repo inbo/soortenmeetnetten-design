@@ -122,17 +122,20 @@ kustduinen <- ecoregions %>%
 
 
 ```{r}
-habitatmap <- read_habitatmap()
+
+n2khab_path <- fileman_up("n2khab_data")
+
+habitatmap <- read_habitatmap(file = file.path(n2khab_path, "10_raw/_versions/habitatmap/habitatmap_2023"))
 
 habitatmap_leefgebied_bwk <- habitatmap %>%
   filter(str_detect(bwk_label, bwk_codes_leefgebied)) %>%
   select(polygon_id, bwk_code_leefgebied = bwk_label) 
 
-
 ```
 
 ```{r}
-habitatmap_stdized <- read_habitatmap_stdized()
+habitatmap_stdized <- read_habitatmap_stdized(file = file.path(n2khab_path, "20_processed/_versions/habitatmap_stdized/habitatmap_stdized_2023_v1/habitatmap_stdized.gpkg"),
+                                              version = "habitatmap_stdized_2023_v1")
 
 habitatmap_stdized_leefgebied_types <- habitatmap_stdized$habitatmap_types %>%
   filter(type %in% habt_leefgebied | str_sub(type,1,4) %in% habt_leefgebied) 
@@ -198,6 +201,7 @@ voorkomen_leefgebied_type <- voorkomen_leefgebied %>%
   left_join(area_type, by = "type") %>%
   mutate(n_obs_100ha = round(n_obs / area_ha_tot * 100, 2))
 ```
+
 In onderstaande tabel geven we een overzicht van de verdeling van de observaties van Nauwe korfslak over:
 
 + de ecoregio's
@@ -228,7 +232,7 @@ voorkomen_leefgebied_type %>%
 
 ## Steekproefeenheid
 
-We maken een 250 m x 250 m grid en selecteren de punten die binnen bwk-polygonen met met geschikt leefgebied liggen en/of met aanwezigheid van de soort
+We maken een 250 m x 250 m grid en selecteren de punten die binnen bwk-polygonen met geschikt leefgebied liggen en/of met aanwezigheid van de soort
 
 Elk gridpunt krijgt een unieke grts-ranking.
 
@@ -339,13 +343,14 @@ full_grid <- extract_sample(
 )
 
 steekproefkader_hok <- full_grid %>%
-  semi_join(steekproefkader_grid, by = "ranking") %>%
+  # semi_join(steekproefkader_grid, by = "ranking") %>%
   mutate(geom = str_c("POLYGON ((", x1c - 125, " ", x2c - 125, 
                                 ",", x1c + 125, " ", x2c - 125,
                                 ",", x1c + 125, " ", x2c + 125,
                                 ",", x1c - 125, " ", x2c + 125,
                                 ",", x1c - 125, " ", x2c - 125, "))")) %>%
   st_as_sf(wkt = "geom", crs = 31370)
+
 
 steekproefkader_hok_leefgebied <- steekproefkader_hok %>%
   st_intersection(steekproefkader_polygonen) %>%
@@ -498,6 +503,7 @@ n <- 60
 n_reserve <- 5
 
 steekproefkader_sc4 <- steekproefkader_grid %>%
+  filter(round(prop_leefgebied, 2) >= 0.5)
   mutate(niet_geschikt = ranking %in% c(4168)) %>% #niet geschikt na manuele controle
   filter(!niet_geschikt) %>%
   mutate(ranking_rel = rank(ranking),
