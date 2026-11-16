@@ -181,7 +181,7 @@ if (is_html_output()) {
 
 #### Algemeen
 
-Binnen de steekproefeenheid (een hok van 250 m x 250 m) wordt op minimaal vijf kansrijke locaties gezocht naar nauwe korfslak gedurende een vaste tijdsperiode van ongeveer 3 uur of ongeveer een halfuur per kansrijke locatie. Op deze manier kunnen er op 1 dag twee hokken worden onderzocht.
+Binnen de steekproefeenheid (een hok van 250 m x 250 m) wordt op minimaal vijf kansrijke locaties gezocht naar nauwe korfslak gedurende een vaste tijdsperiode van ongeveer 3 uur of ongeveer een halfuur per kansrijke locatie. Op deze manier kunnen er op één dag twee hokken worden onderzocht.
 
 ::: {#fig-nk layout-ncol="2" layout-valign="bottom"}
 ![© Marco Vicariotto](images/nauwe_korfslak_marco_vicariotto2.jpg){height="5cm"}
@@ -195,14 +195,14 @@ Nauwe korfslak
 
 Volgend materiaal is noodzakelijk voor het bemonsteren van een 250 m x 250 m hok:
 
-- kaart met lokalisatie van het hok en ligging van het potentieel leefgebied binnen de steekproefeenheid (je kan deze kaart afdrukken via de interactieve [Figuur 3.6](https://www.vlaanderen.be/inbo/rapporten/monitoringsprotocol_mollusken/nauwe_korfslak.html#fig-steekproef-nk-html)) op de websiteversie van dit rapport
+- kaart met lokalisatie van het hok en ligging van het potentieel leefgebied binnen de steekproefeenheid (je kan deze kaart afdrukken via de interactieve [Figuur 3.6](https://www.vlaanderen.be/inbo/rapporten/monitoringsprotocol_mollusken/nauwe_korfslak.html#fig-steekproef-nk-html) op de websiteversie van dit rapport)
 - grove zeef (2 mm)
-- fijne zeef (0.5 mm), belangrijkste voor het zoeken van korfslakken
+- fijne zeef (0,5 mm), belangrijkste voor het zoeken van korfslakken
 - witte sorteerbak (bv. grote ijsdoos)
 - loep (min. 10x vergroting)
 - potjes/proefbuisjes
 - stift
-- (zachte) pincet.
+- (zachte) pincet
 
 #### Voorbereidende handelingen
 
@@ -210,19 +210,20 @@ Het te bezoeken hok dient vooraf bekeken te worden in functie van toegankelijkhe
 
 Met volgende zaken moet rekening gehouden worden:
 
-- bemonstering is beperkt binnen het hok van 250 m x 250 m;
-- indien het terrein niet vrij toegankelijk is, dient toestemming te worden gevraagd;
-- vooraf kunnen mogelijke routes door het gebied best bekeken worden.
+- bemonstering is beperkt binnen het hok van 250 m x 250 m
+- indien het terrein niet vrij toegankelijk is, dient toestemming te worden gevraagd
+- vooraf kunnen mogelijke routes door het gebied best bekeken worden
 
-Hierbij kunnen veelbelovende locaties aangeduid worden (bv. aan de hand van de leefgebiedenkaart). De leefgebiedenkaart is een hulpmiddel maar het is aan de medewerker om te bepalen wat de meest kansrijke bemonsteringslocaties zijn. De locaties worden pas op het veld het best definitief vastgelegd en kunnen gelegen zijn buiten potentieel leefgebied.
+Hierbij kunnen veelbelovende locaties aangeduid worden (bv. aan de hand van de leefgebiedenkaart). De leefgebiedenkaart is een hulpmiddel maar het is aan de medewerker om te bepalen wat de meest kansrijke bemonsteringslocaties zijn.
+De locaties worden best pas op het veld definitief vastgelegd en kunnen gelegen zijn buiten potentieel leefgebied.
 
 #### Timing bemonstering
 
-Wanneer de waarnemer ervoor kiest om op het veld te zeven en het zeefsel ter plekke te onderzoeken moet er in een droge periode bemonsterd worden. Deze methode krijgt de voorkeur. Indien toch bij nat weer wordt gezocht of het strooisel vochtig is kan het materiaal worden meegenomen om te drogen, zodat het later kan worden onderzocht. Ook bij vriesweer kan het zeven van strooisel moeilijkheden opleveren.
+Wanneer de waarnemer ervoor kiest om op het veld te zeven en het zeefsel ter plekke te onderzoeken, moet er in een droge periode bemonsterd worden. Deze methode krijgt de voorkeur. Indien toch bij nat weer wordt gezocht of het strooisel vochtig is kan het materiaal worden meegenomen om te drogen, zodat het later kan worden onderzocht. Ook bij vriesweer kan het zeven van strooisel moeilijkheden opleveren.
 
 #### Bemonstering op locatie
 
-Binnen een tijdsduur van maximaal drie uur bezoek je vijf kansrijke puntlocaties die verspreid in het hok liggen. Op elke puntlocatie onderzoek je grondig gedurende een half uur. Verlies geen tijd door op weg naar de verschillende punten, verspreid in het hok, te zoeken naar nauwe korfslak, tenzij je deze locatie als zeer kansrijk beschouwt. In dit geval registreer je deze als een bemonsteringspunt. Het is de bedoeling dat de bemonsterde punten min of meer verspreid in het hok liggen, zeker als er voldoende kansrijke locaties aanwezig zijn (zie de linker afbeelding in @fig-hok). Indien er weinig voldoende kansrijke locaties voorhanden zijn, is het wel toegestaan om de vijf punten dichter bij elkaar te leggen.
+Binnen een tijdsduur van maximaal drie uur bezoek je vijf kansrijke puntlocaties die verspreid in het hok liggen. Op elke puntlocatie onderzoek je grondig gedurende een half uur. Verlies geen tijd door op weg naar de verschillende punten, verspreid in het hok, te zoeken naar nauwe korfslak, tenzij je deze locatie als zeer kansrijk beschouwt. In dit geval registreer je deze als een bemonsteringspunt. Het is de bedoeling dat de bemonsterde punten min of meer verspreid in het hok liggen, zeker als er voldoende kansrijke locaties aanwezig zijn (zie de linker afbeelding in @fig-hok). Indien er onvoldoende kansrijke locaties voorhanden zijn, is het wel toegestaan om de vijf punten dichter bij elkaar te leggen.
 
 ```{r}
 #| label: fig-hok
@@ -244,11 +245,11 @@ Het bemonsteren van een kansrijke puntlocatie wordt geïllustreerd in [deze vide
 Het veldprotocol bestaat uit volgende stappen:
 
 - Neem een overzichtsfoto van het bemonsteringspunt.
-- Stel een wekker in en laat een alarm afgaan binnen 30 minuten.
+- Stel een wekker in en laat een alarm afgaan na 30 minuten.
 - Op de locatie (maximaal enkele vierkante meters) wordt strooisel, mos en het bovenste deel van de bodem verzameld in de sorteerbak. Verzamel niet te veel zodat de sorteerbak niet vol ligt.
 - Het grove materiaal (bv. droge bladeren) mag verkruimeld worden om eventueel daarop aanwezige slakken los te maken. Dit materiaal kan ook best visueel nagekeken worden op vastklevende korfslakken, waarna het uit de sorteerbak verwijderd kan worden. Beperk hier de zoektijd.
 - Het overgebleven materiaal wordt eerst gezeefd op een zeef van 2 mm. Het materiaal kleiner dan 2 mm wordt in de sorteerbak opgevangen. Het materiaal dat in de zeef achterblijft wordt in de zeef visueel kort nagekeken op de aanwezigheid van korfslakken. Beperk de zoektijd, korfslakken bevinden zich overwegend in de volgende fractie.
-- Het materiaal in de sorteerbak wordt gezeefd over een zeef van 0.5 mm. Het materiaal dat door de zeef valt mag op de locatie achterblijven. Het gezeefde materiaal wordt in de sorteerbak verspreid.
+- Het materiaal in de sorteerbak wordt gezeefd over een zeef van 0,5 mm. Het materiaal dat door de zeef valt mag op de locatie achterblijven. Het gezeefde materiaal wordt in de sorteerbak verspreid.
 - Onderzoek het materiaal in de sorteerbak grondig door systematisch het materiaal met een pincet aan de kant te duwen. In dit materiaal is de kans op het aantreffen van korfslakken het grootst. Neem de tijd om de volledige bak te doorzoeken. Wanneer de sorteerbak eenmaal grondig is doorzocht stopt het zoeken. Houd de gevonden slakken bij in een potje.
 - Als er tijd over is herhaal je deze procedure op een ander punt tot er een halfuur voorbij is. Blijf hierbij binnen een cirkel met een straal van ongeveer 5 m vanaf het gelokaliseerde punt. Als meerdere personen bemonsteren, blijven ze binnen deze straal.
 - De gevonden nauwe korfslakken worden bijgehouden totdat het halfuur verstreken is en de registratie van de gegevens is afgerond. Daarna kunnen de slakken terug op de locatie achtergelaten worden.
@@ -264,7 +265,7 @@ Om een steekproeftrekking te kunnen uitvoeren, moeten we eerst een steekproefkad
 De verspreidingsdata van de nauwe korfslak waar we gebruik van maken zijn:
 
 - alle losse waarnemingen ingevoerd in [waarnemingen.be](www.waarnemingen.be) in de periode 2005 - 2025,
-- waarnemingen ingezameld in kader van het Slak-in-Du project.
+- waarnemingen ingezameld in het kader van het Slak-in-Du project.
 
 @fig-all-data geeft een overzicht van de (punt)locaties waar nauwe korfslak werd waargenomen in de periode 2005 - 2025. Naast de kustregio, komt de soort nog op drie locaties in Vlaanderen voor.
 
@@ -318,10 +319,11 @@ De inhaalslag van nauwe korfslak was beperkt tot de ecoregio Kustduinen. De tref
 
 Voor de selectie van de polygonen maken we gebruik van volgende databronnen:
 
-- de [BWK (versie 2023)](https://zenodo.org/records/10167695) [@de_saeger_2023]:
-- [`habitatmap_stdized` (versie 2023_v1)](https://zenodo.org/records/13865531) [@westra_2024], de gestandaardiseerde versie van de Habitatkaart [@de_saeger_2023];
-- [ecoregions](https://zenodo.org/records/3386208), de kaart met ecodistricten in Vlaanderen.
+- de [BWK (versie 2023)](https://zenodo.org/records/10167695) [@de_saeger_2023]
+- [`habitatmap_stdized` (versie 2023_v1)](https://zenodo.org/records/13865531) [@westra_2024], de gestandaardiseerde versie van de Habitatkaart [@de_saeger_2023]
+- [ecoregions](https://zenodo.org/records/3386208), de kaart met ecodistricten in Vlaanderen
 
+\needspace{80mm}
 ```{r}
 #| label: tbl-leefgebied-nauwe-korfslak
 #| tbl-cap: Vegetatietypes die het potentieel leefgebied van de nauwe korfslak definiëren
@@ -655,12 +657,12 @@ dbDisconnect(db)
 
 Vooraleer we een steekproef trekken moeten we bepalen welke hokken tot het steekproefkader behoren.
 
-In een eerste stap selecteren we alle polygonen uit de Habitatkaart waar we een voldoende grote kans verwachten om nauwe korfslak te treffen. We selecteren de polygonen in de ecoregio Kustduinen die aan minstens één van volgende voorwaarden voldoet:
+In een eerste stap selecteren we alle polygonen uit de Habitatkaart waar we een voldoende grote kans verwachten om nauwe korfslak te treffen. We selecteren de polygonen in de ecoregio Kustduinen die aan minstens één van volgende voorwaarden voldoen:
 
 - de polygoon bevat waarnemingen van nauwe korfslak in de periode 2005 - 2025,
-- de polygoon bevat potentieel leefgebied met bos (habitattype 2180 of 91E0; BWK-code n of gml) of de polygoon bestaat voor minstens 50% uit potentieel leefgebied met open Natura 2000 habitattype of RBB.[^nauwe_korfslak-1]
+- de polygoon bevat potentieel leefgebied met bos (habitattype 2180 of 91E0; BWK-code n of gml) of de polygoon bestaat voor minstens 50% uit potentieel leefgebied met open Natura 2000-habitattype of RBB.[^nauwe_korfslak-1]
 
-[^nauwe_korfslak-1]: Omdat we het potentieel leefgebied met bos deels afbakenen op basis van BWK-codes, bepalen we geen minimum percentage bos per polygoon, omdat deze informatie niet kan afgeleid worden uit de BWK.
+[^nauwe_korfslak-1]: Omdat we het potentieel leefgebied met bos deels afbakenen op basis van BWK-codes, bepalen we geen minimumpercentage bos per polygoon, vermits deze informatie niet kan afgeleid worden uit de BWK.
 
 In een volgende stap selecteren we alle 250 m x 250 m hokken waarvan de centroïde gelegen is in een van de geselecteerde polygonen (@tbl-sampleframe-nk).
 
@@ -784,17 +786,17 @@ if (is_html_output()) {
 
 Net zoals bij de zeggekorfslak maken we gebruik van een ruimtelijk gebalanceerde steekproef op basis van het Generalized Random Tessellation Stratified (GRTS) algoritme [@stevens_2004].
 De implementatie gebeurt via het R-package `grtsdb` [@onkelinx_2022].
-Het GRTS algoritme kent een uniek rangnummer toe aan elk 250 m x 250 m hok in Vlaanderen.
+Het GRTS-algoritme kent een uniek rangnummer toe aan elk 250 m x 250 m hok in Vlaanderen.
 Al deze rangnummers worden opgeslagen in de database `grts_nk.sqlite`, zodat de steekproef reproduceerbaar is (zie meer details in @sec-reproduceerbaarheid).
 We kennen dus ook rangnummers toe aan de hokken die niet tot het steekproefkader behoren.
 Dat doen we omdat het steekproefkader in de toekomst kan wijzigen.
 
-We wensen om een steekproef van 60 hokken te selecteren uit het steekproefkader. Dit doen we door de hokken in het steekproefkader met de 60 laagste GRTS-rangnummers te selecteren. Deze hokken worden verspreid in een meetcyclus van zes jaar geteld. Elk jaar worden er dus tien hokken geteld.
+We wensen een steekproef van 60 hokken te selecteren uit het steekproefkader. Dit doen we door de hokken in het steekproefkader met de 60 laagste GRTS-rangnummers te selecteren. Deze hokken worden verspreid in een meetcyclus van zes jaar geteld. Elk jaar worden er dus tien hokken geteld.
 
 De steekproef verdelen we in twee groepen (op basis van de relatieve ranking):
 
-- de eerste groep van 30 hokken worden in de periode 2024-2026 bemonsterd,
-- de tweede groep van 30 hokken worden in de periode 2027-2029 bemonsterd.
+- de eerste groep van 30 hokken wordt in de periode 2024 - 2026 bemonsterd,
+- de tweede groep van 30 hokken wordt in de periode 2027 - 2029 bemonsterd.
 
 Daarnaast nemen we ook de drie hokken met waarnemingen van nauwe korfslak buiten de ecoregio Kustduinen mee op in het meetnet.
 
@@ -961,7 +963,7 @@ steekproefkader_hok_show  %>%
 Het steekproefkader en de steekproef slaan we op als GIS-lagen in de geopackage 'meetnet_nauwe_korfslak.gpkg'.
 Dit bestand bevat ook de ligging van het potentieel leefgebied in de hokken van het steekproefkader.
 
-Het bestand is beschikbaar via Zenodo: 
+Het bestand is beschikbaar op Zenodo: [10.5281/zenodo.24165349](https://zenodo.org/records/24165349).
 
 ```{r}
 #| eval: false
